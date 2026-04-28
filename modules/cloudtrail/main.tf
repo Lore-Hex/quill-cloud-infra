@@ -3,7 +3,14 @@ variable "data_kms_arn" { type = string }
 data "aws_caller_identity" "current" {}
 
 resource "aws_s3_bucket" "trail" {
-  bucket = "quill-cloudtrail"
+  bucket = "quill-cloudtrail-${data.aws_caller_identity.current.account_id}"
+}
+
+resource "aws_s3_bucket_versioning" "trail" {
+  bucket = aws_s3_bucket.trail.id
+  versioning_configuration {
+    status = "Enabled"
+  }
 }
 
 resource "aws_s3_bucket_object_lock_configuration" "trail" {

@@ -2,9 +2,11 @@ variable "data_kms_arn" { type = string }
 variable "domain" { type = string }
 variable "trust_sub" { type = string }
 
+data "aws_caller_identity" "current" {}
+
 # ---- device-keys bucket: holds the KMS-encrypted sealed blob ----
 resource "aws_s3_bucket" "device_keys" {
-  bucket = "quill-device-keys"
+  bucket = "quill-device-keys-${data.aws_caller_identity.current.account_id}"
 }
 
 resource "aws_s3_bucket_public_access_block" "device_keys" {
@@ -32,7 +34,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "device_keys" {
 
 # ---- trust-page bucket: static HTML, S3 website hosting, public read ----
 resource "aws_s3_bucket" "trust" {
-  bucket = "quill-trust-page"
+  bucket = "${var.trust_sub}.${var.domain}"
 }
 
 resource "aws_s3_bucket_website_configuration" "trust" {
@@ -69,7 +71,7 @@ resource "aws_s3_bucket_policy" "trust" {
 
 # ---- ALB access logs bucket: short retention ----
 resource "aws_s3_bucket" "alb_logs" {
-  bucket = "quill-alb-access-logs"
+  bucket = "quill-alb-access-logs-${data.aws_caller_identity.current.account_id}"
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {

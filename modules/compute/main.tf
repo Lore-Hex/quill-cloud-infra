@@ -11,12 +11,11 @@
 variable "vpc_id" { type = string }
 variable "private_subnets" { type = list(string) }
 variable "parent_role_name" { type = string }
+variable "parent_instance_profile" { type = string }
 variable "alb_target_group" { type = string }
 variable "ecr_repo_url" { type = string }
 
-data "aws_iam_instance_profile" "parent_host" {
-  name = "quill-parent-host"
-}
+data "aws_caller_identity" "current" {}
 
 data "aws_ami" "amzn2023_arm" {
   most_recent = true
@@ -29,7 +28,7 @@ data "aws_ami" "amzn2023_arm" {
 
 resource "aws_security_group" "host" {
   name        = "quill-host"
-  description = "Allow ALB → :8443"
+  description = "Allow ALB to :8443"
   vpc_id      = var.vpc_id
   ingress {
     from_port       = 8443
@@ -50,7 +49,7 @@ resource "aws_launch_template" "host" {
   name_prefix   = "quill-host-"
   image_id      = data.aws_ami.amzn2023_arm.id
   instance_type = "m6g.large"
-  iam_instance_profile { name = data.aws_iam_instance_profile.parent_host.name }
+  iam_instance_profile { name = var.parent_instance_profile }
 
   vpc_security_group_ids = [aws_security_group.host.id]
 
@@ -66,6 +65,14 @@ resource "aws_launch_template" "host" {
     dnf install -y aws-nitro-enclaves-cli aws-nitro-enclaves-cli-devel docker jq
     systemctl enable --now docker
     usermod -aG ne ec2-user
+    
+    # Configure and start the Nitro Enclaves allocator
+    cat << 'EOF_ALLOC' > /etc/nitro_enclaves/allocator.yaml
+memory_mib: 2048
+cpu_count: 2
+EOF_ALLOC
+    systemctl enable --now nitro-enclaves-allocator.service
+    
     aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${var.ecr_repo_url}
     docker pull ${var.ecr_repo_url}:enclave-latest
     nitro-cli build-enclave --docker-uri ${var.ecr_repo_url}:enclave-latest --output-file /opt/quill.eif
@@ -74,7 +81,7 @@ resource "aws_launch_template" "host" {
     docker run -d --restart=always --network=host \
       -e QUILL_ENCLAVE_RELAY_PORT=8001 \
       -e QUILL_USAGE_TABLE_NAME=quill_usage \
-      -e QUILL_DEVICE_KEYS_BUCKET=quill-device-keys \
+      -e QUILL_DEVICE_KEYS_BUCKET=quill-device-keys-${data.aws_caller_identity.current.account_id} \
       ${var.ecr_repo_url}:parent-latest
   EOF
   )

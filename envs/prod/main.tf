@@ -49,12 +49,13 @@ module "alb" {
 }
 
 module "compute" {
-  source           = "../../modules/compute"
-  vpc_id           = module.network.vpc_id
-  private_subnets  = module.network.private_subnets
-  parent_role_name = module.iam.parent_role_name
-  alb_target_group = module.alb.target_group_arn
-  ecr_repo_url     = module.ecr.repo_url
+  source                  = "../../modules/compute"
+  vpc_id                  = module.network.vpc_id
+  private_subnets         = module.network.private_subnets
+  parent_role_name        = module.iam.parent_role_name
+  parent_instance_profile = module.iam.parent_instance_profile
+  alb_target_group        = module.alb.target_group_arn
+  ecr_repo_url            = module.ecr.repo_url
 }
 
 module "github_oidc" {
