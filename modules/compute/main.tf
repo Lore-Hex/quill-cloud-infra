@@ -59,6 +59,12 @@ resource "aws_launch_template" "host" {
     http_put_response_hop_limit = 2          # so containers can reach IMDS
   }
 
+  # Required for Nitro Enclaves: without this, the kernel module never loads
+  # and `nitro-cli run-enclave` fails with E19 (no /sys/module/nitro_enclaves).
+  enclave_options {
+    enabled = true
+  }
+
   # NB: Heredoc body must start at column 0 (no leading whitespace).
   # cloud-init only recognizes `#!` if it's at the very start of the line.
   # We use `<<EOT` (no dash, no stripping) so what we write is what cloud-init sees.
