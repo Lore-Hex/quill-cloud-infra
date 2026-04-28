@@ -104,7 +104,12 @@ fi
 # 4. Allocator config (hugepages reservation for enclaves).
 if command -v nitro-cli >/dev/null 2>&1; then
   mkdir -p /etc/nitro_enclaves /var/cache/nitro_enclaves /var/log/nitro_enclaves
+  # Note the leading `---`: the AL2023 allocator script (a bash YAML
+  # parser) skips all lines until it sees a YAML doc-start marker, so
+  # without `---` it leaves memory_mib unset and exits "missing memory
+  # reservation".
   cat > /etc/nitro_enclaves/allocator.yaml <<'EOF_ALLOC'
+---
 memory_mib: 2048
 cpu_count: 2
 EOF_ALLOC
