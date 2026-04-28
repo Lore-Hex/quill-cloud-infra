@@ -95,7 +95,7 @@ fi
 
 # 4. Allocator config (hugepages reservation for enclaves).
 if command -v nitro-cli >/dev/null 2>&1; then
-  mkdir -p /etc/nitro_enclaves
+  mkdir -p /etc/nitro_enclaves /var/cache/nitro_enclaves /var/log/nitro_enclaves
   cat > /etc/nitro_enclaves/allocator.yaml <<'EOF_ALLOC'
 memory_mib: 2048
 cpu_count: 2
@@ -103,7 +103,14 @@ EOF_ALLOC
   systemctl enable --now nitro-enclaves-allocator.service \
     || echo "WARNING: allocator service failed to start"
   id ec2-user >/dev/null 2>&1 && usermod -aG ne ec2-user || true
+  # nitro-cli build-enclave reads these from env. Without them: E51.
+  cat > /etc/profile.d/nitro_enclaves.sh <<'EOF_PROF'
+export NITRO_CLI_ARTIFACTS=/var/cache/nitro_enclaves
+export NITRO_CLI_BLOBS=/usr/share/nitro_enclaves/blobs
+EOF_PROF
 fi
+export NITRO_CLI_ARTIFACTS=/var/cache/nitro_enclaves
+export NITRO_CLI_BLOBS=/usr/share/nitro_enclaves/blobs
 
 # 5. ECR login via the instance role (no static creds).
 if ! aws ecr get-login-password --region "$REGION" \
