@@ -50,6 +50,10 @@ resource "aws_acm_certificate" "trust" {
   }
 }
 
+resource "aws_acm_certificate_validation" "trust" {
+  certificate_arn = aws_acm_certificate.trust.arn
+}
+
 resource "aws_cloudfront_distribution" "trust" {
   origin {
     domain_name = aws_s3_bucket_website_configuration.trust.website_endpoint
@@ -94,7 +98,7 @@ resource "aws_cloudfront_distribution" "trust" {
   }
 
   viewer_certificate {
-    acm_certificate_arn      = aws_acm_certificate.trust.arn
+    acm_certificate_arn      = aws_acm_certificate_validation.trust.certificate_arn
     ssl_support_method       = "sni-only"
     minimum_protocol_version = "TLSv1.2_2021"
   }
