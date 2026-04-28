@@ -26,8 +26,8 @@ data "aws_caller_identity" "current" {}
 data "aws_iam_policy_document" "device_keys_policy" {
   # 1) Account root — for break-glass, key admin, key rotation.
   statement {
-    sid     = "RootKeyAdmin"
-    effect  = "Allow"
+    sid    = "RootKeyAdmin"
+    effect = "Allow"
     principals {
       type        = "AWS"
       identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
@@ -40,8 +40,8 @@ data "aws_iam_policy_document" "device_keys_policy" {
   #    Operator can re-seal the blob with new keys but CANNOT read the
   #    current contents. (Decrypt is reserved for the attested enclave.)
   statement {
-    sid     = "OperatorMayEncryptOnly"
-    effect  = "Allow"
+    sid    = "OperatorMayEncryptOnly"
+    effect = "Allow"
     principals {
       type        = "AWS"
       identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/quill-deploy"]
@@ -53,8 +53,8 @@ data "aws_iam_policy_document" "device_keys_policy" {
   # 3) Parent host role — Decrypt allowed only when the request comes from
   #    a Nitro Enclave whose PCR0 matches the published measurement.
   statement {
-    sid     = "AttestedEnclaveDecryptOnly"
-    effect  = "Allow"
+    sid    = "AttestedEnclaveDecryptOnly"
+    effect = "Allow"
     principals {
       type        = "AWS"
       identifiers = [var.parent_role_arn]
@@ -89,5 +89,5 @@ resource "aws_kms_alias" "data" {
 }
 
 output "device_keys_cmk_arn" { value = aws_kms_key.device_keys.arn }
-output "device_keys_alias"   { value = aws_kms_alias.device_keys.name }
-output "data_cmk_arn"        { value = aws_kms_key.data.arn }
+output "device_keys_alias" { value = aws_kms_alias.device_keys.name }
+output "data_cmk_arn" { value = aws_kms_key.data.arn }

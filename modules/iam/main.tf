@@ -23,9 +23,9 @@ resource "aws_iam_role" "parent_host" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
+      Effect    = "Allow"
       Principal = { Service = "ec2.amazonaws.com" }
-      Action = "sts:AssumeRole"
+      Action    = "sts:AssumeRole"
     }]
   })
 }
@@ -34,8 +34,8 @@ data "aws_iam_policy_document" "parent_host" {
   # Bedrock: only via our VPC endpoint. If creds are exfiltrated, they're
   # useless outside the VPC.
   statement {
-    sid     = "BedrockInvokeViaVpce"
-    effect  = "Allow"
+    sid    = "BedrockInvokeViaVpce"
+    effect = "Allow"
     actions = [
       "bedrock:InvokeModel",
       "bedrock:InvokeModelWithResponseStream",
@@ -50,22 +50,22 @@ data "aws_iam_policy_document" "parent_host" {
 
   # KMS: scoped to our two CMKs.
   statement {
-    sid     = "KmsDecryptDeviceKeys"
-    effect  = "Allow"
-    actions = ["kms:Decrypt", "kms:DescribeKey"]
+    sid       = "KmsDecryptDeviceKeys"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:DescribeKey"]
     resources = [var.device_keys_kms_arn]
   }
   statement {
-    sid     = "KmsGenerateDataKey"
-    effect  = "Allow"
-    actions = ["kms:GenerateDataKey", "kms:Decrypt", "kms:DescribeKey"]
+    sid       = "KmsGenerateDataKey"
+    effect    = "Allow"
+    actions   = ["kms:GenerateDataKey", "kms:Decrypt", "kms:DescribeKey"]
     resources = [var.data_kms_arn]
   }
 
   # DynamoDB: only quill_usage, only UpdateItem + Query.
   statement {
-    sid     = "DynamoUsageTableOnly"
-    effect  = "Allow"
+    sid    = "DynamoUsageTableOnly"
+    effect = "Allow"
     actions = [
       "dynamodb:UpdateItem",
       "dynamodb:Query",
@@ -76,28 +76,28 @@ data "aws_iam_policy_document" "parent_host" {
 
   # S3: read sealed blob + write trust page (single-key writes only).
   statement {
-    sid     = "S3SealedBlobRead"
-    effect  = "Allow"
-    actions = ["s3:GetObject"]
+    sid       = "S3SealedBlobRead"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
     resources = ["${var.device_keys_bucket_arn}/*"]
   }
   statement {
-    sid     = "S3TrustPageWrite"
-    effect  = "Allow"
-    actions = ["s3:PutObject"]
+    sid       = "S3TrustPageWrite"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
     resources = ["${var.trust_bucket_arn}/pcr0.txt"]
   }
 
   # ECR: pull our images only.
   statement {
-    sid     = "EcrPullProxyOnly"
-    effect  = "Allow"
-    actions = ["ecr:GetAuthorizationToken"]
+    sid       = "EcrPullProxyOnly"
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
     resources = ["*"]
   }
   statement {
-    sid     = "EcrPullProxyImages"
-    effect  = "Allow"
+    sid    = "EcrPullProxyImages"
+    effect = "Allow"
     actions = [
       "ecr:BatchCheckLayerAvailability",
       "ecr:GetDownloadUrlForLayer",
@@ -108,8 +108,8 @@ data "aws_iam_policy_document" "parent_host" {
 
   # CloudWatch Logs: heartbeat group only.
   statement {
-    sid     = "LogsHeartbeatGroup"
-    effect  = "Allow"
+    sid    = "LogsHeartbeatGroup"
+    effect = "Allow"
     actions = [
       "logs:CreateLogStream",
       "logs:PutLogEvents",
@@ -133,6 +133,6 @@ resource "aws_iam_instance_profile" "parent_host" {
   role = aws_iam_role.parent_host.name
 }
 
-output "parent_role_arn"       { value = aws_iam_role.parent_host.arn }
-output "parent_role_name"      { value = aws_iam_role.parent_host.name }
+output "parent_role_arn" { value = aws_iam_role.parent_host.arn }
+output "parent_role_name" { value = aws_iam_role.parent_host.name }
 output "parent_instance_profile" { value = aws_iam_instance_profile.parent_host.name }

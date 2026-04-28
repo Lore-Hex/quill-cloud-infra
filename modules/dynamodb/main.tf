@@ -30,5 +30,5 @@ resource "aws_dynamodb_table" "usage" {
   tags = { Name = "quill_usage" }
 }
 
-output "usage_table_arn"  { value = aws_dynamodb_table.usage.arn }
+output "usage_table_arn" { value = aws_dynamodb_table.usage.arn }
 output "usage_table_name" { value = aws_dynamodb_table.usage.name }

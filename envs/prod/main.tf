@@ -13,8 +13,8 @@ module "kms" {
 }
 
 module "dynamodb" {
-  source        = "../../modules/dynamodb"
-  data_kms_arn  = module.kms.data_cmk_arn
+  source       = "../../modules/dynamodb"
+  data_kms_arn = module.kms.data_cmk_arn
 }
 
 module "s3" {
@@ -29,32 +29,32 @@ module "ecr" {
 }
 
 module "iam" {
-  source                  = "../../modules/iam"
-  region                  = var.region
-  device_keys_kms_arn     = module.kms.device_keys_cmk_arn
-  data_kms_arn            = module.kms.data_cmk_arn
-  usage_table_arn         = module.dynamodb.usage_table_arn
-  device_keys_bucket_arn  = module.s3.device_keys_bucket_arn
-  trust_bucket_arn        = module.s3.trust_bucket_arn
-  ecr_repo_arn            = module.ecr.repo_arn
-  bedrock_vpce_id         = module.network.bedrock_vpce_id
+  source                 = "../../modules/iam"
+  region                 = var.region
+  device_keys_kms_arn    = module.kms.device_keys_cmk_arn
+  data_kms_arn           = module.kms.data_cmk_arn
+  usage_table_arn        = module.dynamodb.usage_table_arn
+  device_keys_bucket_arn = module.s3.device_keys_bucket_arn
+  trust_bucket_arn       = module.s3.trust_bucket_arn
+  ecr_repo_arn           = module.ecr.repo_arn
+  bedrock_vpce_id        = module.network.bedrock_vpce_id
 }
 
 module "alb" {
-  source        = "../../modules/alb"
-  vpc_id        = module.network.vpc_id
+  source         = "../../modules/alb"
+  vpc_id         = module.network.vpc_id
   public_subnets = module.network.public_subnets
-  domain        = var.domain
-  api_sub       = var.api_subdomain
+  domain         = var.domain
+  api_sub        = var.api_subdomain
 }
 
 module "compute" {
-  source            = "../../modules/compute"
-  vpc_id            = module.network.vpc_id
-  private_subnets   = module.network.private_subnets
-  parent_role_name  = module.iam.parent_role_name
-  alb_target_group  = module.alb.target_group_arn
-  ecr_repo_url      = module.ecr.repo_url
+  source           = "../../modules/compute"
+  vpc_id           = module.network.vpc_id
+  private_subnets  = module.network.private_subnets
+  parent_role_name = module.iam.parent_role_name
+  alb_target_group = module.alb.target_group_arn
+  ecr_repo_url     = module.ecr.repo_url
 }
 
 module "github_oidc" {

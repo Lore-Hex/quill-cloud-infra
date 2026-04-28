@@ -82,9 +82,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
   }
 }
 
-output "device_keys_bucket_arn"        { value = aws_s3_bucket.device_keys.arn }
-output "device_keys_bucket_name"       { value = aws_s3_bucket.device_keys.id }
-output "trust_bucket_arn"              { value = aws_s3_bucket.trust.arn }
+output "device_keys_bucket_arn" { value = aws_s3_bucket.device_keys.arn }
+output "device_keys_bucket_name" { value = aws_s3_bucket.device_keys.id }
+output "trust_bucket_arn" { value = aws_s3_bucket.trust.arn }
 output "trust_bucket_website_endpoint" { value = aws_s3_bucket_website_configuration.trust.website_endpoint }
-output "alb_logs_bucket_arn"           { value = aws_s3_bucket.alb_logs.arn }
-output "alb_logs_bucket_id"            { value = aws_s3_bucket.alb_logs.id }
+output "alb_logs_bucket_arn" { value = aws_s3_bucket.alb_logs.arn }
+output "alb_logs_bucket_id" { value = aws_s3_bucket.alb_logs.id }

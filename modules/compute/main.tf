@@ -35,8 +35,8 @@ resource "aws_security_group" "host" {
     from_port       = 8443
     to_port         = 8443
     protocol        = "tcp"
-    security_groups = []  # restricted to the ALB SG via the listener
-    cidr_blocks     = ["10.0.0.0/16"]  # only from the VPC
+    security_groups = []              # restricted to the ALB SG via the listener
+    cidr_blocks     = ["10.0.0.0/16"] # only from the VPC
   }
   egress {
     from_port   = 0
@@ -56,8 +56,8 @@ resource "aws_launch_template" "host" {
 
   metadata_options {
     http_endpoint               = "enabled"
-    http_tokens                 = "required"  # IMDSv2 only
-    http_put_response_hop_limit = 2           # so containers can reach IMDS
+    http_tokens                 = "required" # IMDSv2 only
+    http_put_response_hop_limit = 2          # so containers can reach IMDS
   }
 
   user_data = base64encode(<<-EOF
@@ -89,7 +89,7 @@ resource "aws_autoscaling_group" "host" {
   name                      = "quill-host"
   desired_capacity          = 1
   min_size                  = 1
-  max_size                  = 1   # V1 single-instance; no autoscaling
+  max_size                  = 1 # V1 single-instance; no autoscaling
   vpc_zone_identifier       = var.private_subnets
   health_check_type         = "ELB"
   health_check_grace_period = 300
