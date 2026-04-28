@@ -60,29 +60,96 @@ resource "aws_launch_template" "host" {
   }
 
   user_data = base64encode(<<-EOF
-    #!/usr/bin/env bash
-    set -eu
-    dnf install -y aws-nitro-enclaves-cli aws-nitro-enclaves-cli-devel docker jq
+    #!/bin/bash
+    # Tee everything to a known log so failures are diagnosable via SSM.
+    exec > >(tee -a /var/log/quill-bringup.log) 2>&1
+    echo "=== quill bring-up start: $(date -Iseconds) ==="
+    # Deliberately NOT `set -e`: each step should attempt regardless of the
+    # others. The parent container MUST start (so ALB sees a healthy target);
+    # the enclave path is best-effort (so a transient nitro-cli install
+    # failure doesn't prevent the API from coming up at all).
+    set -ux
+
+    ECR_URL="${var.ecr_repo_url}"
+    REGION="us-east-1"
+    ACCOUNT_ID="${data.aws_caller_identity.current.account_id}"
+
+    # 1. Wait up to 60s for network/DNS so dnf can reach the AL2023 mirrors.
+    for i in $(seq 1 30); do
+      if curl -sf --max-time 3 https://amazonlinux-2023-repos-us-east-1.s3.dualstack.us-east-1.amazonaws.com/ -o /dev/null; then
+        echo "[$(date -Iseconds)] network OK after $${i} attempts"
+        break
+      fi
+      sleep 2
+    done
+
+    # 2. Base packages. Always required.
+    dnf install -y docker jq awscli || echo "WARNING: base packages failed"
     systemctl enable --now docker
-    usermod -aG ne ec2-user
-    
-    # Configure and start the Nitro Enclaves allocator
-    cat << 'EOF_ALLOC' > /etc/nitro_enclaves/allocator.yaml
+
+    # 3. Nitro Enclaves CLI. If this fails we still bring up the parent.
+    if ! dnf install -y aws-nitro-enclaves-cli aws-nitro-enclaves-cli-devel; then
+      echo "WARNING: nitro-cli install failed; enclave path will be unavailable"
+    fi
+
+    # 4. Allocator config (hugepages reservation for enclaves).
+    if command -v nitro-cli >/dev/null 2>&1; then
+      mkdir -p /etc/nitro_enclaves
+      cat > /etc/nitro_enclaves/allocator.yaml <<'EOF_ALLOC'
 memory_mib: 2048
 cpu_count: 2
 EOF_ALLOC
-    systemctl enable --now nitro-enclaves-allocator.service
-    
-    aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${var.ecr_repo_url}
-    docker pull ${var.ecr_repo_url}:enclave-latest
-    nitro-cli build-enclave --docker-uri ${var.ecr_repo_url}:enclave-latest --output-file /opt/quill.eif
-    nitro-cli run-enclave --eif-path /opt/quill.eif --memory 2048 --cpu-count 2
-    docker pull ${var.ecr_repo_url}:parent-latest
-    docker run -d --restart=always --network=host \
+      systemctl enable --now nitro-enclaves-allocator.service \
+        || echo "WARNING: allocator service failed to start"
+      id ec2-user >/dev/null 2>&1 && usermod -aG ne ec2-user || true
+    fi
+
+    # 5. ECR login via the instance role (no static creds).
+    if ! aws ecr get-login-password --region "$REGION" \
+        | docker login --username AWS --password-stdin "$ECR_URL"; then
+      echo "FATAL: ECR login failed; cannot pull images"
+      exit 1
+    fi
+
+    # 6. Parent container — runs regardless of enclave state. Hardened.
+    docker pull "$ECR_URL:parent-latest"
+    docker rm -f quill-parent 2>/dev/null || true
+    docker run -d --restart=unless-stopped --network=host \
+      --read-only \
+      --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+      --cap-drop=ALL \
+      --security-opt=no-new-privileges \
+      --name quill-parent \
       -e QUILL_ENCLAVE_RELAY_PORT=8001 \
       -e QUILL_USAGE_TABLE_NAME=quill_usage \
-      -e QUILL_DEVICE_KEYS_BUCKET=quill-device-keys-${data.aws_caller_identity.current.account_id} \
-      ${var.ecr_repo_url}:parent-latest
+      -e QUILL_DEVICE_KEYS_BUCKET="quill-device-keys-$${ACCOUNT_ID}" \
+      -e QUILL_AWS_REGION="$REGION" \
+      -e QUILL_USE_DEV_TRANSPORT=false \
+      -e AWS_DEFAULT_REGION="$REGION" \
+      "$ECR_URL:parent-latest"
+
+    # 7. Best-effort enclave bring-up.
+    if command -v nitro-cli >/dev/null 2>&1; then
+      docker pull "$ECR_URL:enclave-latest" \
+        || { echo "WARNING: enclave image pull failed"; exit 0; }
+      if nitro-cli build-enclave \
+          --docker-uri "$ECR_URL:enclave-latest" \
+          --output-file /opt/quill.eif > /var/log/quill-eif-build.log 2>&1; then
+        # Tear down any prior enclave (e.g., on AMI replacement).
+        nitro-cli describe-enclaves --output json 2>/dev/null \
+          | jq -r '.[].EnclaveID' \
+          | xargs -r -I{} nitro-cli terminate-enclave --enclave-id {}
+        nitro-cli run-enclave \
+          --eif-path /opt/quill.eif \
+          --memory 2048 --cpu-count 2 \
+          --enclave-cid 16 \
+          || echo "WARNING: nitro-cli run-enclave failed"
+      else
+        echo "WARNING: enclave EIF build failed (see /var/log/quill-eif-build.log)"
+      fi
+    fi
+
+    echo "=== quill bring-up end: $(date -Iseconds) ==="
   EOF
   )
 
