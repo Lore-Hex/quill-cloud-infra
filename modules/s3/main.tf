@@ -42,6 +42,64 @@ resource "aws_s3_bucket_website_configuration" "trust" {
   index_document { suffix = "index.html" }
 }
 
+resource "aws_acm_certificate" "trust" {
+  domain_name       = "${var.trust_sub}.${var.domain}"
+  validation_method = "DNS"
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_cloudfront_distribution" "trust" {
+  origin {
+    domain_name = aws_s3_bucket_website_configuration.trust.website_endpoint
+    origin_id   = "S3Website"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  enabled             = true
+  is_ipv6_enabled     = true
+  default_root_object = "index.html"
+
+  aliases = ["${var.trust_sub}.${var.domain}"]
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3Website"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 3600
+    max_ttl                = 86400
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    acm_certificate_arn      = aws_acm_certificate.trust.arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "trust" {
   bucket                  = aws_s3_bucket.trust.id
   block_public_acls       = false
@@ -88,5 +146,16 @@ output "device_keys_bucket_arn" { value = aws_s3_bucket.device_keys.arn }
 output "device_keys_bucket_name" { value = aws_s3_bucket.device_keys.id }
 output "trust_bucket_arn" { value = aws_s3_bucket.trust.arn }
 output "trust_bucket_website_endpoint" { value = aws_s3_bucket_website_configuration.trust.website_endpoint }
+output "trust_cloudfront_domain" { value = aws_cloudfront_distribution.trust.domain_name }
+output "trust_acm_validation_records" {
+  value = [
+    for o in aws_acm_certificate.trust.domain_validation_options :
+    {
+      name  = o.resource_record_name
+      type  = o.resource_record_type
+      value = o.resource_record_value
+    }
+  ]
+}
 output "alb_logs_bucket_arn" { value = aws_s3_bucket.alb_logs.arn }
 output "alb_logs_bucket_id" { value = aws_s3_bucket.alb_logs.id }

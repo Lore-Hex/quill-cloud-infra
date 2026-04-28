@@ -5,7 +5,10 @@ output "alb_dns_name" {
 
 output "acm_validation_records" {
   description = "Add these CNAMEs in Cloudflare for ACM cert validation (DNS-only)."
-  value       = module.alb.acm_validation_records
+  value = concat(
+    module.alb.acm_validation_records,
+    module.s3.trust_acm_validation_records
+  )
 }
 
 output "ecr_repo_url" {
@@ -17,8 +20,13 @@ output "github_oidc_role_arn" {
   value       = module.github_oidc.deploy_role_arn
 }
 
+output "trust_cloudfront_domain" {
+  description = "Point trust.quill at this in Cloudflare (DNS-only) for HTTPS."
+  value       = module.s3.trust_cloudfront_domain
+}
+
 output "trust_bucket_website_endpoint" {
-  description = "Point trust.quill at this in Cloudflare (DNS-only)."
+  description = "Point trust.quill at this in Cloudflare (DNS-only) for HTTP (non-secure)."
   value       = module.s3.trust_bucket_website_endpoint
 }
 
