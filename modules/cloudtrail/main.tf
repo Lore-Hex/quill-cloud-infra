@@ -21,14 +21,20 @@ data "aws_iam_policy_document" "trail_bucket" {
     sid     = "AWSCloudTrailAclCheck"
     effect  = "Allow"
     actions = ["s3:GetBucketAcl"]
-    principals { type = "Service" identifiers = ["cloudtrail.amazonaws.com"] }
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
     resources = [aws_s3_bucket.trail.arn]
   }
   statement {
     sid     = "AWSCloudTrailWrite"
     effect  = "Allow"
     actions = ["s3:PutObject"]
-    principals { type = "Service" identifiers = ["cloudtrail.amazonaws.com"] }
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
     resources = ["${aws_s3_bucket.trail.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
     condition {
       test     = "StringEquals"
