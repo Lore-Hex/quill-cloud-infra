@@ -46,9 +46,11 @@ resource "aws_security_group" "host" {
 }
 
 resource "aws_launch_template" "host" {
-  name_prefix   = "quill-host-"
-  image_id      = data.aws_ami.amzn2023_arm.id
-  instance_type = "m6g.large"
+  name_prefix = "quill-host-"
+  image_id    = data.aws_ami.amzn2023_arm.id
+  # m6g.large (2 vCPUs) is too small: reserving 2 vCPUs for enclaves leaves
+  # 0 for the host. m6g.xlarge has 4 vCPUs (2 enclave + 2 host).
+  instance_type = "m6g.xlarge"
   iam_instance_profile { name = var.parent_instance_profile }
 
   vpc_security_group_ids = [aws_security_group.host.id]
@@ -106,8 +108,16 @@ if command -v nitro-cli >/dev/null 2>&1; then
 memory_mib: 2048
 cpu_count: 2
 EOF_ALLOC
-  systemctl enable --now nitro-enclaves-allocator.service \
+  # `enable --now` won't restart a service that already failed (the package's
+  # post-install kicked it before allocator.yaml existed). Use restart explicitly.
+  systemctl enable nitro-enclaves-allocator.service || true
+  systemctl restart nitro-enclaves-allocator.service \
     || echo "WARNING: allocator service failed to start"
+  # Wait briefly so allocator can finish reserving CPUs/memory before run-enclave.
+  for i in $(seq 1 15); do
+    if systemctl is-active --quiet nitro-enclaves-allocator.service; then break; fi
+    sleep 2
+  done
   id ec2-user >/dev/null 2>&1 && usermod -aG ne ec2-user || true
   # nitro-cli build-enclave reads these from env. Without them: E51.
   cat > /etc/profile.d/nitro_enclaves.sh <<'EOF_PROF'
