@@ -33,7 +33,7 @@ data "aws_ami" "amzn2023_arm" {
 }
 
 resource "aws_security_group" "host" {
-  name        = "quill-host"
+  name = "quill-host"
   # NOTE: AWS does NOT allow updating an SG's description in place — changing
   # this string forces destroy+create, which fails when running EC2 instances
   # still hold the SG (DependencyViolation). Leave the description alone;
