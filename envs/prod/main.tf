@@ -48,6 +48,16 @@ module "alb" {
   api_sub        = var.api_subdomain
 }
 
+# NLB does TCP passthrough on :443 to the parent's TCP-pump on :8444.
+# The enclave terminates TLS — AWS infrastructure never holds plaintext
+# prompt content. Lives alongside the ALB; ALB now serves operator-facing
+# admin/trust/health only.
+module "nlb" {
+  source         = "../../modules/nlb"
+  vpc_id         = module.network.vpc_id
+  public_subnets = module.network.public_subnets
+}
+
 module "compute" {
   source                  = "../../modules/compute"
   vpc_id                  = module.network.vpc_id
@@ -55,6 +65,7 @@ module "compute" {
   parent_role_name        = module.iam.parent_role_name
   parent_instance_profile = module.iam.parent_instance_profile
   alb_target_group        = module.alb.target_group_arn
+  nlb_target_group        = module.nlb.target_group_arn
   ecr_repo_url            = module.ecr.repo_url
 }
 
