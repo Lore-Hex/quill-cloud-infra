@@ -37,14 +37,14 @@ resource "aws_security_group" "host" {
   description = "Allow ALB → :8443 (HTTP) and NLB → :8444 (TCP passthrough)"
   vpc_id      = var.vpc_id
   ingress {
-    description = "ALB → parent FastAPI (admin / trust / health)"
+    description = "ALB -> parent FastAPI (admin / trust / health)"
     from_port   = 8443
     to_port     = 8443
     protocol    = "tcp"
     cidr_blocks = ["10.0.0.0/16"] # in-VPC only; ALB SG covers the rest
   }
   ingress {
-    description = "NLB → parent TCP pump → enclave-terminated TLS"
+    description = "NLB -> parent TCP pump -> enclave-terminated TLS"
     from_port   = 8444
     to_port     = 8444
     protocol    = "tcp"
