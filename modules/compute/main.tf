@@ -13,6 +13,12 @@ variable "private_subnets" { type = list(string) }
 variable "parent_role_name" { type = string }
 variable "parent_instance_profile" { type = string }
 variable "alb_target_group" { type = string }
+# NLB target group for TLS-passthrough on :8444 → enclave. Optional during
+# Phase 2 cutover; pass null while only the ALB target is wired.
+variable "nlb_target_group" {
+  type    = string
+  default = null
+}
 variable "ecr_repo_url" { type = string }
 
 data "aws_caller_identity" "current" {}
@@ -28,14 +34,24 @@ data "aws_ami" "amzn2023_arm" {
 
 resource "aws_security_group" "host" {
   name        = "quill-host"
-  description = "Allow ALB to :8443"
+  description = "Allow ALB → :8443 (HTTP) and NLB → :8444 (TCP passthrough)"
   vpc_id      = var.vpc_id
   ingress {
-    from_port       = 8443
-    to_port         = 8443
-    protocol        = "tcp"
-    security_groups = []              # restricted to the ALB SG via the listener
-    cidr_blocks     = ["10.0.0.0/16"] # only from the VPC
+    description = "ALB into parent FastAPI (admin trust health)"
+    from_port   = 8443
+    to_port     = 8443
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"] # in-VPC only; ALB SG covers the rest
+  }
+  ingress {
+    description = "NLB into parent TCP pump into enclave-terminated TLS"
+    from_port   = 8444
+    to_port     = 8444
+    protocol    = "tcp"
+    # NLBs preserve client source IP, so the SG must allow the public
+    # internet here. The parent's TCP pump never auths or inspects;
+    # the enclave's TLS handshake is the gate.
+    cidr_blocks = ["0.0.0.0/0"]
   }
   egress {
     from_port   = 0
@@ -248,7 +264,7 @@ resource "aws_autoscaling_group" "host" {
   vpc_zone_identifier       = var.private_subnets
   health_check_type         = "ELB"
   health_check_grace_period = 300
-  target_group_arns         = [var.alb_target_group]
+  target_group_arns         = compact([var.alb_target_group, var.nlb_target_group])
   launch_template {
     id      = aws_launch_template.host.id
     version = "$Latest"
