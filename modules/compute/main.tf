@@ -33,8 +33,12 @@ data "aws_ami" "amzn2023_arm" {
 }
 
 resource "aws_security_group" "host" {
-  name        = "quill-host"
-  description = "Allow ALB → :8443 (HTTP) and NLB → :8444 (TCP passthrough)"
+  name = "quill-host"
+  # NOTE: AWS does NOT allow updating an SG's description in place — changing
+  # this string forces destroy+create, which fails when running EC2 instances
+  # still hold the SG (DependencyViolation). Leave the description alone;
+  # describe changes in per-rule descriptions instead.
+  description = "Allow ALB to :8443"
   vpc_id      = var.vpc_id
   ingress {
     description = "ALB into parent FastAPI (admin trust health)"
