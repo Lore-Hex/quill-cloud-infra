@@ -140,13 +140,18 @@ if ! aws ecr get-login-password --region "$REGION" \
   exit 1
 fi
 
-# 6. Parent container — runs regardless of enclave state. Hardened.
+# 6. Parent container — runs regardless of enclave state.
+# AF_VSOCK socket() requires CAP_NET_ADMIN; --cap-drop=ALL breaks it.
+# We pin a small allowlist instead.
 docker pull "$ECR_URL:parent-latest"
 docker rm -f quill-parent 2>/dev/null || true
 docker run -d --restart=unless-stopped --network=host \
+  --device=/dev/vsock:/dev/vsock \
   --read-only \
   --tmpfs /tmp:rw,noexec,nosuid,size=64m \
   --cap-drop=ALL \
+  --cap-add=NET_ADMIN \
+  --cap-add=NET_RAW \
   --security-opt=no-new-privileges \
   --name quill-parent \
   -e QUILL_ENCLAVE_RELAY_PORT=8001 \
@@ -157,21 +162,37 @@ docker run -d --restart=unless-stopped --network=host \
   -e AWS_DEFAULT_REGION="$REGION" \
   "$ECR_URL:parent-latest"
 
-# 7. Best-effort enclave bring-up.
+# 7. Enclave bring-up via a systemd unit so it auto-restarts if it dies.
 if command -v nitro-cli >/dev/null 2>&1; then
   docker pull "$ECR_URL:enclave-latest" \
     || { echo "WARNING: enclave image pull failed"; exit 0; }
   if nitro-cli build-enclave \
       --docker-uri "$ECR_URL:enclave-latest" \
       --output-file /opt/quill.eif > /var/log/quill-eif-build.log 2>&1; then
-    nitro-cli describe-enclaves --output json 2>/dev/null \
-      | jq -r '.[].EnclaveID' \
-      | xargs -r -I{} nitro-cli terminate-enclave --enclave-id {}
-    nitro-cli run-enclave \
-      --eif-path /opt/quill.eif \
-      --memory 2048 --cpu-count 2 \
-      --enclave-cid 16 \
-      || echo "WARNING: nitro-cli run-enclave failed"
+    cat > /etc/systemd/system/quill-enclave.service <<'EOF_UNIT'
+[Unit]
+Description=Quill Nitro Enclave
+After=nitro-enclaves-allocator.service
+Requires=nitro-enclaves-allocator.service
+
+[Service]
+# nitro-cli run-enclave returns once the enclave is launched; the enclave
+# itself runs as a sibling process, so this is a oneshot that we keep
+# "active" via RemainAfterExit. ExecStop tears it down cleanly.
+Type=oneshot
+RemainAfterExit=yes
+Environment=NITRO_CLI_ARTIFACTS=/var/cache/nitro_enclaves
+Environment=NITRO_CLI_BLOBS=/usr/share/nitro_enclaves/blobs
+ExecStartPre=-/usr/bin/bash -c '/usr/bin/nitro-cli describe-enclaves --output json | /usr/bin/jq -r ".[].EnclaveID" | xargs -r -I{} /usr/bin/nitro-cli terminate-enclave --enclave-id {}'
+ExecStart=/usr/bin/nitro-cli run-enclave --eif-path /opt/quill.eif --memory 2048 --cpu-count 2 --enclave-cid 16
+ExecStop=/usr/bin/bash -c '/usr/bin/nitro-cli describe-enclaves --output json | /usr/bin/jq -r ".[].EnclaveID" | xargs -r -I{} /usr/bin/nitro-cli terminate-enclave --enclave-id {}'
+
+[Install]
+WantedBy=multi-user.target
+EOF_UNIT
+    systemctl daemon-reload
+    systemctl enable --now quill-enclave.service \
+      || echo "WARNING: quill-enclave.service failed to start"
   else
     echo "WARNING: enclave EIF build failed (see /var/log/quill-eif-build.log)"
   fi
