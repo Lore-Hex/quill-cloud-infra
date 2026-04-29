@@ -133,7 +133,36 @@ fi
 export NITRO_CLI_ARTIFACTS=/var/cache/nitro_enclaves
 export NITRO_CLI_BLOBS=/usr/share/nitro_enclaves/blobs
 
-# 5. ECR login via the instance role (no static creds).
+# 5a. vsock-proxy for Bedrock (parent listens on CID-ANY:8003, forwards
+# raw bytes to bedrock-runtime.us-east-1.amazonaws.com:443). The Go enclave
+# inside opens AF_VSOCK to (3, 8003) and does TLS itself; parent never
+# decrypts the prompt path.
+if command -v vsock-proxy >/dev/null 2>&1; then
+  cat > /etc/nitro_enclaves/vsock-proxy-quill.yaml <<'EOF_VSP'
+allowlist:
+- {address: bedrock-runtime.us-east-1.amazonaws.com, port: 443}
+- {address: kms.us-east-1.amazonaws.com, port: 443}
+- {address: s3.us-east-1.amazonaws.com, port: 443}
+EOF_VSP
+  cat > /etc/systemd/system/quill-vsock-proxy-bedrock.service <<'EOF_BEDROCK'
+[Unit]
+Description=Quill vsock-proxy: Bedrock-runtime
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/vsock-proxy 8003 bedrock-runtime.us-east-1.amazonaws.com 443 --config /etc/nitro_enclaves/vsock-proxy-quill.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF_BEDROCK
+  systemctl daemon-reload
+  systemctl enable --now quill-vsock-proxy-bedrock.service \
+    || echo "WARNING: vsock-proxy for Bedrock failed to start"
+fi
+
+# 5b. ECR login via the instance role (no static creds).
 if ! aws ecr get-login-password --region "$REGION" \
     | docker login --username AWS --password-stdin "$ECR_URL"; then
   echo "FATAL: ECR login failed; cannot pull images"
@@ -141,26 +170,29 @@ if ! aws ecr get-login-password --region "$REGION" \
 fi
 
 # 6. Parent container — runs regardless of enclave state.
-# AF_VSOCK socket() requires CAP_NET_ADMIN; --cap-drop=ALL breaks it.
-# We pin a small allowlist instead.
+#
+# AF_VSOCK socket() is BLOCKED by Docker's default seccomp profile, and the
+# (currently empty) container default-drop list also strips the kernel cap
+# implementation needs. We use seccomp=unconfined (V1 acceptable: parent
+# code is open-source + signed; there's no untrusted user payload running
+# inside the parent container).
 docker pull "$ECR_URL:parent-latest"
 docker rm -f quill-parent 2>/dev/null || true
 docker run -d --restart=unless-stopped --network=host \
   --device=/dev/vsock:/dev/vsock \
-  --read-only \
-  --tmpfs /tmp:rw,noexec,nosuid,size=64m \
-  --cap-drop=ALL \
-  --cap-add=NET_ADMIN \
-  --cap-add=NET_RAW \
-  --security-opt=no-new-privileges \
+  --security-opt seccomp=unconfined \
   --name quill-parent \
   -e QUILL_ENCLAVE_RELAY_PORT=8001 \
   -e QUILL_USAGE_TABLE_NAME=quill_usage \
   -e QUILL_DEVICE_KEYS_BUCKET="quill-device-keys-$${ACCOUNT_ID}" \
   -e QUILL_AWS_REGION="$REGION" \
   -e QUILL_USE_DEV_TRANSPORT=false \
+  -e QUILL_BOOTSTRAP_SERVER=true \
+  -e QUILL_BEDROCK_VSOCK_PROXY=3:8003 \
   -e AWS_DEFAULT_REGION="$REGION" \
-  "$ECR_URL:parent-latest"
+  --entrypoint /app/.venv/bin/uvicorn \
+  "$ECR_URL:parent-latest" \
+  quill_parent.main:app --host 0.0.0.0 --port 8443 --loop asyncio
 
 # 7. Enclave bring-up via a systemd unit so it auto-restarts if it dies.
 if command -v nitro-cli >/dev/null 2>&1; then
