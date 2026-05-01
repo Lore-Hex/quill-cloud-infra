@@ -300,12 +300,12 @@ EOT
 }
 
 resource "aws_autoscaling_group" "host" {
-  name                      = "quill-host"
-  desired_capacity          = 1
-  min_size                  = 1
-  max_size                  = 1 # V1 single-instance; no autoscaling
-  vpc_zone_identifier       = var.private_subnets
-  health_check_type         = "ELB"
+  name                = "quill-host"
+  desired_capacity    = 1
+  min_size            = 1
+  max_size            = 1 # V1 single-instance; no autoscaling
+  vpc_zone_identifier = var.private_subnets
+  health_check_type   = "ELB"
   # Bring-up takes ~5-7 min cold (dnf install nitro-cli + aws-cli + jq, ECR
   # login, parent docker pull, parent container start). The previous 300s
   # grace period was a hair short on cold boots — ASG sometimes terminated
