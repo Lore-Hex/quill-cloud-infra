@@ -16,6 +16,14 @@ variable "trust_bucket_arn" { type = string }
 variable "ecr_repo_arn" { type = string }
 variable "bedrock_vpce_id" { type = string }
 
+# Optional: ARN of a Secrets Manager secret holding the OpenRouter API key.
+# Set to non-null only when the deploy is wired for the openrouter-target
+# enclave build; null for AWS Bedrock or GCP Vertex deploys.
+variable "openrouter_secret_arn" {
+  type    = string
+  default = null
+}
+
 data "aws_caller_identity" "current" {}
 
 resource "aws_iam_role" "parent_host" {
@@ -115,6 +123,18 @@ data "aws_iam_policy_document" "parent_host" {
       "logs:PutLogEvents",
     ]
     resources = ["arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/quill/parent:*"]
+  }
+
+  # Secrets Manager: read the OpenRouter API key only when the deploy is
+  # configured for that backend. Single-secret scope; nothing else readable.
+  dynamic "statement" {
+    for_each = var.openrouter_secret_arn == null ? [] : [var.openrouter_secret_arn]
+    content {
+      sid       = "SecretsManagerOpenRouterKey"
+      effect    = "Allow"
+      actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+      resources = [statement.value]
+    }
   }
 }
 
