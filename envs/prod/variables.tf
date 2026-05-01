@@ -37,3 +37,15 @@ variable "github_repos" {
     "Lore-Hex/quill-cloud-infra",
   ]
 }
+
+variable "openrouter_secret_id" {
+  description = "Secrets Manager secret-id holding the OpenRouter API key. Set via TF_VAR_openrouter_secret_id when deploying the openrouter-target enclave; null otherwise."
+  type        = string
+  default     = null
+}
+
+variable "enclave_image_tag" {
+  description = "ECR tag of the enclave image to run. 'enclave-latest' = AWS Bedrock; 'enclave-openrouter-latest' = OpenRouter ZDR."
+  type        = string
+  default     = "enclave-latest"
+}

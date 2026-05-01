@@ -21,6 +21,24 @@ variable "nlb_target_group" {
 }
 variable "ecr_repo_url" { type = string }
 
+# Optional Secrets Manager secret-id holding the OpenRouter API key. When
+# set, the parent fetches it at boot and ships the key to the openrouter-
+# target enclave in BootstrapData. Null when the deploy uses Bedrock or
+# Vertex (the default).
+variable "openrouter_secret_id" {
+  type    = string
+  default = null
+}
+
+# Which enclave image tag to pull. Switch from "enclave-latest" (AWS
+# Bedrock) to "enclave-openrouter-latest" to flip the deployed provider.
+# Cleaner than `docker tag` aliasing because it leaves an audit trail in
+# Terraform state.
+variable "enclave_image_tag" {
+  type    = string
+  default = "enclave-latest"
+}
+
 data "aws_caller_identity" "current" {}
 
 data "aws_ami" "amzn2023_arm" {
@@ -163,6 +181,7 @@ allowlist:
 - {address: bedrock-runtime.us-east-1.amazonaws.com, port: 443}
 - {address: kms.us-east-1.amazonaws.com, port: 443}
 - {address: s3.us-east-1.amazonaws.com, port: 443}
+- {address: openrouter.ai, port: 443}
 EOF_VSP
   cat > /etc/systemd/system/quill-vsock-proxy-bedrock.service <<'EOF_BEDROCK'
 [Unit]
@@ -177,9 +196,27 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF_BEDROCK
+  # Companion proxy for the OpenRouter ZDR target. Listens on (CID-ANY,
+  # 8004); enclave opens AF_VSOCK to (3, 8004) when built with
+  # `-tags openrouter` and TLS-handshakes openrouter.ai end-to-end.
+  cat > /etc/systemd/system/quill-vsock-proxy-openrouter.service <<'EOF_OR'
+[Unit]
+Description=Quill vsock-proxy: OpenRouter
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/vsock-proxy 8004 openrouter.ai 443 --config /etc/nitro_enclaves/vsock-proxy-quill.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF_OR
   systemctl daemon-reload
   systemctl enable --now quill-vsock-proxy-bedrock.service \
     || echo "WARNING: vsock-proxy for Bedrock failed to start"
+  systemctl enable --now quill-vsock-proxy-openrouter.service \
+    || echo "WARNING: vsock-proxy for OpenRouter failed to start"
 fi
 
 # 5b. ECR login via the instance role (no static creds).
@@ -209,6 +246,8 @@ docker run -d --restart=unless-stopped --network=host \
   -e QUILL_USE_DEV_TRANSPORT=false \
   -e QUILL_BOOTSTRAP_SERVER=true \
   -e QUILL_BEDROCK_VSOCK_PROXY=3:8003 \
+  -e QUILL_OPENROUTER_VSOCK_PROXY=3:8004 \
+  -e QUILL_OPENROUTER_SECRET_ID="${coalesce(var.openrouter_secret_id, "")}" \
   -e AWS_DEFAULT_REGION="$REGION" \
   --entrypoint /app/.venv/bin/uvicorn \
   "$ECR_URL:parent-latest" \
@@ -216,10 +255,10 @@ docker run -d --restart=unless-stopped --network=host \
 
 # 7. Enclave bring-up via a systemd unit so it auto-restarts if it dies.
 if command -v nitro-cli >/dev/null 2>&1; then
-  docker pull "$ECR_URL:enclave-latest" \
+  docker pull "$ECR_URL:${var.enclave_image_tag}" \
     || { echo "WARNING: enclave image pull failed"; exit 0; }
   if nitro-cli build-enclave \
-      --docker-uri "$ECR_URL:enclave-latest" \
+      --docker-uri "$ECR_URL:${var.enclave_image_tag}" \
       --output-file /opt/quill.eif > /var/log/quill-eif-build.log 2>&1; then
     cat > /etc/systemd/system/quill-enclave.service <<'EOF_UNIT'
 [Unit]

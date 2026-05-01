@@ -1,6 +1,8 @@
 # Top-level wiring. Each module owns its own subset of resources; this
 # file only passes outputs between them.
 
+data "aws_caller_identity" "current" {}
+
 module "network" {
   source = "../../modules/network"
   region = var.region
@@ -38,6 +40,7 @@ module "iam" {
   trust_bucket_arn       = module.s3.trust_bucket_arn
   ecr_repo_arn           = module.ecr.repo_arn
   bedrock_vpce_id        = module.network.bedrock_vpce_id
+  openrouter_secret_arn  = var.openrouter_secret_id == null ? null : "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:${var.openrouter_secret_id}*"
 }
 
 module "alb" {
@@ -67,6 +70,8 @@ module "compute" {
   alb_target_group        = module.alb.target_group_arn
   nlb_target_group        = module.nlb.target_group_arn
   ecr_repo_url            = module.ecr.repo_url
+  openrouter_secret_id    = var.openrouter_secret_id
+  enclave_image_tag       = var.enclave_image_tag
 }
 
 module "github_oidc" {
