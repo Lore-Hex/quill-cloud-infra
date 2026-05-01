@@ -105,6 +105,22 @@ resource "aws_launch_template" "host" {
     enabled = true
   }
 
+  # AL2023's default 8 GB root volume isn't enough. After base packages
+  # (docker + nitro-cli + aws-cli + jq), the parent docker image, and
+  # the enclave EIF, the bring-up failed with "docker: failed to register
+  # layer: no space left on device" mid parent-pull. 30 GB gives
+  # comfortable headroom for both images plus EIF builds, with room for
+  # /var/log/quill-bringup.log to grow across redeploys.
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = 30
+      volume_type           = "gp3"
+      delete_on_termination = true
+      encrypted             = true
+    }
+  }
+
   # NB: Heredoc body must start at column 0 (no leading whitespace).
   # cloud-init only recognizes `#!` if it's at the very start of the line.
   # We use `<<EOT` (no dash, no stripping) so what we write is what cloud-init sees.
@@ -300,12 +316,12 @@ EOT
 }
 
 resource "aws_autoscaling_group" "host" {
-  name                      = "quill-host"
-  desired_capacity          = 1
-  min_size                  = 1
-  max_size                  = 1 # V1 single-instance; no autoscaling
-  vpc_zone_identifier       = var.private_subnets
-  health_check_type         = "ELB"
+  name                = "quill-host"
+  desired_capacity    = 1
+  min_size            = 1
+  max_size            = 1 # V1 single-instance; no autoscaling
+  vpc_zone_identifier = var.private_subnets
+  health_check_type   = "ELB"
   # Bring-up takes ~5-7 min cold (dnf install nitro-cli + aws-cli + jq, ECR
   # login, parent docker pull, parent container start). The previous 300s
   # grace period was a hair short on cold boots — ASG sometimes terminated
