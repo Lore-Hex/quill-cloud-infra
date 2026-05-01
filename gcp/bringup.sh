@@ -51,7 +51,28 @@ FORWARD_RULE="${FORWARD_RULE:-quill-fr}"
 log() { echo "[$(date +%H:%M:%S)] $*" >&2; }
 gc() { gcloud --project "$PROJECT_ID" "$@"; }
 
-PROJECT_NUMBER=$(gc projects describe "$PROJECT_ID" --format='value(projectNumber)')
+# ---- 0. Sanity: gcloud auth -------------------------------------------
+if ! gc projects describe "$PROJECT_ID" --format='value(projectNumber)' >/tmp/.proj 2>&1; then
+  if grep -q -i 'reauthentication\|reauth\|login' /tmp/.proj; then
+    cat <<'EOF' >&2
+
+Your gcloud session needs a fresh login. Run:
+
+  gcloud auth login
+  gcloud auth application-default login
+
+Then re-run this script.
+
+EOF
+    rm -f /tmp/.proj
+    exit 1
+  fi
+  cat /tmp/.proj >&2
+  rm -f /tmp/.proj
+  exit 1
+fi
+PROJECT_NUMBER=$(cat /tmp/.proj | tr -d '\n')
+rm -f /tmp/.proj
 log "project: $PROJECT_ID ($PROJECT_NUMBER)"
 
 # ---- 1. APIs -----------------------------------------------------------
