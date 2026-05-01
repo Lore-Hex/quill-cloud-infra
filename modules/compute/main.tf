@@ -264,6 +264,7 @@ docker run -d --restart=unless-stopped --network=host \
   -e QUILL_BEDROCK_VSOCK_PROXY=3:8003 \
   -e QUILL_OPENROUTER_VSOCK_PROXY=3:8004 \
   -e QUILL_OPENROUTER_SECRET_ID="${coalesce(var.openrouter_secret_id, "")}" \
+  -e QUILL_TCP_PUMP=true \
   -e AWS_DEFAULT_REGION="$REGION" \
   --entrypoint /app/.venv/bin/uvicorn \
   "$ECR_URL:parent-latest" \
