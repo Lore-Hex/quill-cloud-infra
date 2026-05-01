@@ -306,7 +306,14 @@ resource "aws_autoscaling_group" "host" {
   max_size                  = 1 # V1 single-instance; no autoscaling
   vpc_zone_identifier       = var.private_subnets
   health_check_type         = "ELB"
-  health_check_grace_period = 300
+  # Bring-up takes ~5-7 min cold (dnf install nitro-cli + aws-cli + jq, ECR
+  # login, parent docker pull, parent container start). The previous 300s
+  # grace period was a hair short on cold boots — ASG sometimes terminated
+  # the instance just as it was becoming healthy, sending the host into a
+  # 6-minute cycle. 1200s gives a comfortable margin without masking real
+  # bring-up failures (instance still gets terminated if /health is still
+  # 502 after 20 min).
+  health_check_grace_period = 1200
   target_group_arns         = compact([var.alb_target_group, var.nlb_target_group])
   launch_template {
     id      = aws_launch_template.host.id
