@@ -20,6 +20,9 @@
 #   IMAGE_TAG     default: gcp-release-<quill-cloud-proxy short commit>
 #   VM_NAME       default: quill-enclave
 #   API_HOST      default: api.quillrouter.com
+#   TR_CONTROL_PLANE_BASE_URL default: https://trustedrouter.com/v1
+#   TRUSTEDROUTER_INTERNAL_SECRET default: trustedrouter-internal-gateway-token
+#   TR_KMS_KEYRING_ID / TR_BYOK_KMS_KEY_ID identify the control-plane BYOK KMS key
 #   SECRET_OPENROUTER_FILE   path to a file with the OpenRouter API key
 #                              (default: ~/.quill-openrouter-test.key — same path
 #                               we used for the AWS smoke test)
@@ -44,12 +47,16 @@ if [ -z "${IMAGE_TAG:-}" ]; then
 fi
 VM_NAME="${VM_NAME:-quill-enclave}"
 API_HOST="${API_HOST:-api.quillrouter.com}"
+TR_CONTROL_PLANE_BASE_URL="${TR_CONTROL_PLANE_BASE_URL:-https://trustedrouter.com/v1}"
+TRUSTEDROUTER_INTERNAL_SECRET="${TRUSTEDROUTER_INTERNAL_SECRET:-trustedrouter-internal-gateway-token}"
 WORKLOAD_SA_NAME="${WORKLOAD_SA_NAME:-quill-workload}"
 SECRET_OPENROUTER="${SECRET_OPENROUTER:-quill-openrouter-key}"
 SECRET_DEVICES="${SECRET_DEVICES:-quill-device-keys}"
 SECRET_OPENROUTER_FILE="${SECRET_OPENROUTER_FILE:-$HOME/.quill-openrouter-test.key}"
 KEYRING="${KEYRING:-quill}"
 KMS_KEY="${KMS_KEY:-quill-attest}"
+TR_KMS_KEYRING_ID="${TR_KMS_KEYRING_ID:-trusted-router}"
+TR_BYOK_KMS_KEY_ID="${TR_BYOK_KMS_KEY_ID:-byok-envelope}"
 LB_NAME="${LB_NAME:-quill-prompt}"
 HEALTH_CHECK="${HEALTH_CHECK:-quill-health}"
 BACKEND_SERVICE="${BACKEND_SERVICE:-quill-backend}"
@@ -156,6 +163,19 @@ if ! gc kms keys describe "$KMS_KEY" --keyring "$KEYRING" --location "$REGION" >
 else
   log "KMS key $KMS_KEY already exists"
 fi
+if gc kms keys describe "$TR_BYOK_KMS_KEY_ID" --keyring "$TR_KMS_KEYRING_ID" --location "$REGION" >/dev/null 2>&1; then
+  log "granting workload SA BYOK envelope decrypt on $TR_KMS_KEYRING_ID/$TR_BYOK_KMS_KEY_ID"
+  gc kms keys add-iam-policy-binding "$TR_BYOK_KMS_KEY_ID" \
+    --keyring "$TR_KMS_KEYRING_ID" \
+    --location "$REGION" \
+    --member="serviceAccount:$WORKLOAD_SA" \
+    --role="roles/cloudkms.cryptoKeyDecrypter" \
+    --quiet >/dev/null
+else
+  echo "ERROR: BYOK envelope KMS key missing: $TR_KMS_KEYRING_ID/$TR_BYOK_KMS_KEY_ID in $REGION" >&2
+  echo "Run the TrustedRouter control-plane infra deploy first." >&2
+  exit 1
+fi
 
 # ---- 5. Secret Manager secrets ----------------------------------------
 ensure_secret() {
@@ -190,6 +210,18 @@ fi
 OPENROUTER_KEY=$(tr -d '[:space:]' < "$SECRET_OPENROUTER_FILE")
 ensure_secret "$SECRET_OPENROUTER" "$OPENROUTER_KEY"
 unset OPENROUTER_KEY
+
+if gc secrets describe "$TRUSTEDROUTER_INTERNAL_SECRET" >/dev/null 2>&1; then
+  log "granting workload SA access to $TRUSTEDROUTER_INTERNAL_SECRET"
+  gc secrets add-iam-policy-binding "$TRUSTEDROUTER_INTERNAL_SECRET" \
+    --member="serviceAccount:$WORKLOAD_SA" \
+    --role="roles/secretmanager.secretAccessor" \
+    --condition=None >/dev/null
+else
+  echo "ERROR: Secret Manager secret missing: $TRUSTEDROUTER_INTERNAL_SECRET" >&2
+  echo "Run the TrustedRouter control-plane secret deploy first so the attested gateway can authorize/settle usage." >&2
+  exit 1
+fi
 
 # Generate a fresh device-key blob if not provided.
 SECRET_DEVICES_FILE="${SECRET_DEVICES_FILE:-$HOME/.quill-gcp-device-keys.json}"
@@ -280,7 +312,7 @@ if ! gc compute instances describe "$VM_NAME" --zone "$ZONE" >/dev/null 2>&1; th
     --shielded-vtpm \
     --shielded-integrity-monitoring \
     --tags="quill-enclave" \
-    --metadata="^~^tee-image-reference=$IMAGE_REF~tee-restart-policy=Always~tee-container-log-redirect=true~tee-env-QUILL_GCP_PROJECT_ID=$PROJECT_ID~tee-env-QUILL_GCP_REGION=$REGION~tee-env-QUILL_DEVICE_KEYS_SECRET=$SECRET_DEVICES~tee-env-QUILL_OPENROUTER_SECRET=$SECRET_OPENROUTER~tee-env-QUILL_API_HOST=$API_HOST"
+    --metadata="^~^tee-image-reference=$IMAGE_REF~tee-restart-policy=Always~tee-container-log-redirect=true~tee-env-QUILL_GCP_PROJECT_ID=$PROJECT_ID~tee-env-QUILL_GCP_REGION=$REGION~tee-env-QUILL_DEVICE_KEYS_SECRET=$SECRET_DEVICES~tee-env-QUILL_OPENROUTER_SECRET=$SECRET_OPENROUTER~tee-env-QUILL_TRUSTEDROUTER_INTERNAL_SECRET=$TRUSTEDROUTER_INTERNAL_SECRET~tee-env-TR_CONTROL_PLANE_BASE_URL=$TR_CONTROL_PLANE_BASE_URL~tee-env-TR_REGION=$REGION~tee-env-QUILL_API_HOST=$API_HOST"
     # NOTE: QUILL_ENCLAVE_TLS is NOT injected via metadata — it's baked
     # in via the Dockerfile's `ENV QUILL_ENCLAVE_TLS=true`. CSP refuses
     # any env-var override that isn't whitelisted in the image's
@@ -291,7 +323,7 @@ else
   log "VM $VM_NAME already exists — updating metadata"
   gc compute instances add-metadata "$VM_NAME" \
     --zone="$ZONE" \
-    --metadata="tee-image-reference=$IMAGE_REF,tee-restart-policy=Always,tee-container-log-redirect=true,tee-env-QUILL_GCP_PROJECT_ID=$PROJECT_ID,tee-env-QUILL_GCP_REGION=$REGION,tee-env-QUILL_DEVICE_KEYS_SECRET=$SECRET_DEVICES,tee-env-QUILL_OPENROUTER_SECRET=$SECRET_OPENROUTER,tee-env-QUILL_API_HOST=$API_HOST"
+    --metadata="tee-image-reference=$IMAGE_REF,tee-restart-policy=Always,tee-container-log-redirect=true,tee-env-QUILL_GCP_PROJECT_ID=$PROJECT_ID,tee-env-QUILL_GCP_REGION=$REGION,tee-env-QUILL_DEVICE_KEYS_SECRET=$SECRET_DEVICES,tee-env-QUILL_OPENROUTER_SECRET=$SECRET_OPENROUTER,tee-env-QUILL_TRUSTEDROUTER_INTERNAL_SECRET=$TRUSTEDROUTER_INTERNAL_SECRET,tee-env-TR_CONTROL_PLANE_BASE_URL=$TR_CONTROL_PLANE_BASE_URL,tee-env-TR_REGION=$REGION,tee-env-QUILL_API_HOST=$API_HOST"
 fi
 
 # ---- 8. Firewall: allow GLB health checks + :443 ingress --------------
