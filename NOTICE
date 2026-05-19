@@ -1,0 +1,14 @@
+Quill Cloud Infra
+Copyright 2026 Lore-Hex
+
+This product is part of TrustedRouter (https://trustedrouter.com),
+developed by Lore-Hex (https://github.com/Lore-Hex). The Terraform
+modules in this repository provision the AWS + GCP infrastructure
+that runs the attested-enclave deployment whose code lives in
+quill-cloud-proxy (https://github.com/Lore-Hex/quill-cloud-proxy)
+and whose live attestation chain is published at
+https://trust.trustedrouter.com.
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+Redistribution must retain this NOTICE file per Section 4(b) of
+the license.
