@@ -95,4 +95,10 @@ Cloudflare proxy MUST be off — orange-cloud breaks the trust story
 
 ## License
 
-Apache 2.0.
+Business Source License 1.1. See [`LICENSE`](LICENSE). The source is public
+so anyone can read and verify the infrastructure shape behind the trust
+surface at https://trust.trustedrouter.com. Non-production use (review,
+audit, local evaluation) is free. Production use requires a commercial
+license from Lore Hex Corp: licensing@trustedrouter.com. Each version
+converts to the Apache License 2.0 four years after publication. Code
+published before July 3, 2026 remains Apache-2.0.
