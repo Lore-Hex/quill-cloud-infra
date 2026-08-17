@@ -83,3 +83,30 @@ module "cloudtrail" {
   source       = "../../modules/cloudtrail"
   data_kms_arn = module.kms.data_cmk_arn
 }
+
+# ---------------------------------------------------------------------------
+# Adopting the CloudTrail -> CloudWatch Logs delivery that was built by hand.
+# ---------------------------------------------------------------------------
+# The log group and delivery role have existed in the account since 2026-08-15
+# and were never in state, so declaring them in modules/cloudtrail is necessary
+# but not sufficient: a plain apply would try to CREATE them and fail with
+# ResourceAlreadyExistsException / EntityAlreadyExists.
+#
+# These import blocks make the adoption declarative and reviewable in `plan`,
+# rather than a `terraform import` typed at a shell and recorded nowhere --
+# which is the same class of undocumented manual step that produced the drift
+# in the first place. They can be deleted once an apply has adopted them.
+import {
+  to = module.cloudtrail.aws_cloudwatch_log_group.trail
+  id = "/aws/cloudtrail/quill"
+}
+
+import {
+  to = module.cloudtrail.aws_iam_role.trail_cw
+  id = "CloudTrail-CloudWatchLogs-quill"
+}
+
+import {
+  to = module.cloudtrail.aws_iam_role_policy.trail_cw
+  id = "CloudTrail-CloudWatchLogs-quill:WriteTrailEvents"
+}
