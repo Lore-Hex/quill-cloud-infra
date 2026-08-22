@@ -8,7 +8,8 @@ Open-source infrastructure for [`quill-cloud-proxy`](https://github.com/Lore-Hex
 |------|-------|---------------|--------|
 | `envs/prod/` + `modules/*` | AWS `us-east-1` | S3 + DynamoDB lock | Terraform |
 | `envs/aws-eu-prod/` + `modules/aws/*` | AWS `eu-west-3` | S3 (native lockfile) in `eu-west-3` | Terraform (analytics + VPC connectors); scripts (App Runner service) |
-| `envs/azure-prod/` + `modules/azure/*` | Azure `uaenorth` | Azure Blob (lease lock) | Terraform |
+| `envs/azure-prod/` + `modules/azure/*` | Azure `uaenorth` | Azure Blob (lease lock) | Terraform (analytics) |
+| `envs/azure-tee/` | Azure `uaenorth`, `australiaeast` | Azure Blob (lease lock) | Terraform (enclave scaffolding); deploy stays in `quill-cloud-proxy/tools/deploy-azure-aci.sh` |
 | `envs/gcp-prod/` + `modules/gcp/*`; proxy deploy tools | GCP (four enclave regions; analytics in `us-central1`) | GCS (generation lock) | Terraform (analytics + static enclave layout); deploy tools (measured templates) |
 
 The GCP enclave fleet is deliberately split at the row above. Terraform owns

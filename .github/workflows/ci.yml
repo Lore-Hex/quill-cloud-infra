@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [envs/prod, envs/azure-prod, envs/gcp-prod, envs/aws-eu-prod]
+        env: [envs/prod, envs/azure-prod, envs/azure-tee, envs/gcp-prod, envs/aws-eu-prod]
     defaults:
       run:
         working-directory: ${{ matrix.env }}
