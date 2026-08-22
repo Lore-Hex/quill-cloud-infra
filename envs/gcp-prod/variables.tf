@@ -24,10 +24,17 @@ variable "subnetwork_name" {
 
 variable "clickhouse_nodes" {
   description = "The three live ClickHouse members keyed by permanent name. Keep this a map: removing a middle member must not renumber the remaining machines."
+  // This type is a COPY of the module's, and copies drift: the first version
+  // omitted `metadata` here after adding it there, and Terraform's type
+  // conversion silently STRIPPED the attribute from the default on its way
+  // into the module -- the plan kept proposing to null live metadata while
+  // this file visibly declared it. An attribute the type does not name does
+  // not exist, no matter what the value says.
   type = map(object({
     zone         = string
     machine_type = string
     disk_size_gb = number
+    metadata     = optional(map(string), {})
   }))
   default = {
     tr-clickhouse-1 = {
@@ -35,15 +42,21 @@ variable "clickhouse_nodes" {
       machine_type = "e2-standard-4"
       disk_size_gb = 500
     }
+    // Nodes 2 and 3 carry a pointer to the ClickHouse password's Secret
+    // Manager NAME; node 1 does not. That asymmetry is the live state, not a
+    // typo in this file -- describing it keeps the plan clean, and anyone
+    // reconciling it should do so on the machines first, then here.
     tr-clickhouse-2 = {
       zone         = "us-central1-b"
       machine_type = "e2-standard-4"
       disk_size_gb = 500
+      metadata     = { clickhouse-password-secret = "trustedrouter-clickhouse-password" }
     }
     tr-clickhouse-3 = {
       zone         = "us-central1-c"
       machine_type = "e2-standard-4"
       disk_size_gb = 500
+      metadata     = { clickhouse-password-secret = "trustedrouter-clickhouse-password" }
     }
   }
 }

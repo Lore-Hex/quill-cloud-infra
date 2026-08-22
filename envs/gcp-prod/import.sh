@@ -51,44 +51,69 @@ adopt() {
     }
 }
 
-service_account_import_id() {
-  if gcloud iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" \
-    --project "$PROJECT_ID" >/dev/null 2>&1; then
-    printf 'projects/%s/serviceAccounts/%s' "$PROJECT_ID" "$SERVICE_ACCOUNT_EMAIL"
+# Each helper answers "what is this resource's import id", with THREE possible
+# outcomes, not two: present (prints the id), absent (prints nothing, exits 0),
+# and COULD NOT ASK (message on stderr, exits 1). The first version collapsed
+# the last two -- every describe was guarded by >/dev/null 2>&1 -- so an
+# expired credential or a disabled API read as "not in GCP, terraform apply
+# would create it". That is the same empty-means-absent trap the snapshot
+# comment above already warns about, on the other side of the conversation.
+# gcloud's CLI auth and Terraform's application-default credentials can also
+# diverge, so the script could claim absence while an apply, authenticated
+# differently, went on to collide with the live resources.
+#
+# Callers assign these via VAR="$(helper)" as standalone assignments, where the
+# substitution's exit status IS the assignment's status and `set -e` stops the
+# script. Nesting the call inside another command's arguments would discard
+# that status.
+probe() {
+  local what="$1"; shift
+  local out
+  if out="$(gcloud "$@" --project "$PROJECT_ID" 2>&1)"; then
+    return 0
   fi
+  if printf '%s' "$out" | grep -qiE "NOT_FOUND|was not found|does not exist"; then
+    return 10
+  fi
+  printf 'could not ask GCP about %s:\n%s\n' "$what" "$out" >&2
+  return 1
+}
+
+service_account_import_id() {
+  probe "$SERVICE_ACCOUNT_EMAIL" iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" \
+    && printf 'projects/%s/serviceAccounts/%s' "$PROJECT_ID" "$SERVICE_ACCOUNT_EMAIL" \
+    || { [ $? -eq 10 ] && return 0 || return 1; }
 }
 
 firewall_import_id() {
   local name="$1"
-  if gcloud compute firewall-rules describe "$name" \
-    --project "$PROJECT_ID" >/dev/null 2>&1; then
-    printf 'projects/%s/global/firewalls/%s' "$PROJECT_ID" "$name"
-  fi
+  probe "firewall $name" compute firewall-rules describe "$name" \
+    && printf 'projects/%s/global/firewalls/%s' "$PROJECT_ID" "$name" \
+    || { [ $? -eq 10 ] && return 0 || return 1; }
 }
 
 instance_import_id() {
   local name="$1" zone="$2"
-  if gcloud compute instances describe "$name" \
-    --project "$PROJECT_ID" --zone "$zone" >/dev/null 2>&1; then
-    printf 'projects/%s/zones/%s/instances/%s' "$PROJECT_ID" "$zone" "$name"
-  fi
+  probe "instance $name" compute instances describe "$name" --zone "$zone" \
+    && printf 'projects/%s/zones/%s/instances/%s' "$PROJECT_ID" "$zone" "$name" \
+    || { [ $? -eq 10 ] && return 0 || return 1; }
 }
 
 echo "=== GCP analytics identity and firewall"
-adopt 'module.clickhouse.google_service_account.clickhouse' \
-  "$(service_account_import_id)"
-adopt 'module.clickhouse.google_compute_firewall.internal' \
-  "$(firewall_import_id tr-clickhouse-internal)"
-adopt 'module.clickhouse.google_compute_firewall.health_check' \
-  "$(firewall_import_id tr-clickhouse-health-check)"
+SA_ID="$(service_account_import_id)"
+FW_INTERNAL_ID="$(firewall_import_id tr-clickhouse-internal)"
+FW_HC_ID="$(firewall_import_id tr-clickhouse-health-check)"
+adopt 'module.clickhouse.google_service_account.clickhouse' "$SA_ID"
+adopt 'module.clickhouse.google_compute_firewall.internal' "$FW_INTERNAL_ID"
+adopt 'module.clickhouse.google_compute_firewall.health_check' "$FW_HC_ID"
 
 echo "=== GCP analytics nodes"
-adopt 'module.clickhouse.google_compute_instance.node["tr-clickhouse-1"]' \
-  "$(instance_import_id tr-clickhouse-1 us-central1-a)"
-adopt 'module.clickhouse.google_compute_instance.node["tr-clickhouse-2"]' \
-  "$(instance_import_id tr-clickhouse-2 us-central1-b)"
-adopt 'module.clickhouse.google_compute_instance.node["tr-clickhouse-3"]' \
-  "$(instance_import_id tr-clickhouse-3 us-central1-c)"
+NODE1_ID="$(instance_import_id tr-clickhouse-1 us-central1-a)"
+NODE2_ID="$(instance_import_id tr-clickhouse-2 us-central1-b)"
+NODE3_ID="$(instance_import_id tr-clickhouse-3 us-central1-c)"
+adopt 'module.clickhouse.google_compute_instance.node["tr-clickhouse-1"]' "$NODE1_ID"
+adopt 'module.clickhouse.google_compute_instance.node["tr-clickhouse-2"]' "$NODE2_ID"
+adopt 'module.clickhouse.google_compute_instance.node["tr-clickhouse-3"]' "$NODE3_ID"
 
 echo
 echo "=== drift (expect: no changes, or additions you can explain)"

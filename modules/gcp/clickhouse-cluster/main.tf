@@ -68,12 +68,22 @@ resource "google_compute_firewall" "internal" {
   direction     = "INGRESS"
   source_ranges = var.internal_source_ranges
   target_tags   = [var.network_tag]
+  description   = var.internal_description
 
   // 8123 (HTTP), 9000 (native), and Keeper's 9181/9234, from inside the
   // default VPC only. Never Internet/0.0.0.0/0: see the header.
-  allow {
-    protocol = "tcp"
-    ports    = var.internal_ports
+  //
+  // One allow block PER PORT, dynamically, because that is the shape the live
+  // rule actually has. A single four-port block is functionally identical, but
+  // Terraform diffs structure, not effect -- describing the same policy in a
+  // different shape reads as permanent drift, and a drift detector that is
+  // never clean is a drift detector nobody believes.
+  dynamic "allow" {
+    for_each = var.internal_ports
+    content {
+      protocol = "tcp"
+      ports    = [allow.value]
+    }
   }
 }
 
@@ -85,6 +95,7 @@ resource "google_compute_firewall" "health_check" {
   direction     = "INGRESS"
   source_ranges = var.health_check_source_ranges
   target_tags   = [var.network_tag]
+  description   = var.health_check_description
 
   // Health checks need the HTTP endpoint and nothing else. In particular,
   // Google's probes never need the native protocol or either Keeper port.
@@ -95,8 +106,9 @@ resource "google_compute_firewall" "health_check" {
 }
 
 resource "google_service_account" "clickhouse" {
-  account_id = var.service_account_id
-  project    = var.project_id
+  account_id   = var.service_account_id
+  project      = var.project_id
+  display_name = var.service_account_display_name
 
   lifecycle {
     // A recreated service account may have the same email but it gets a new
@@ -117,8 +129,24 @@ resource "google_compute_instance" "node" {
   zone         = each.value.zone
   machine_type = each.value.machine_type
   tags         = [var.network_tag]
+  metadata     = each.value.metadata
+
+  // API-level deletion protection, ON at the provider too. The live nodes have
+  // it, the provider defaults it to false, and an imported resource inherits
+  // the DEFAULT into its plan -- so leaving this unstated meant the first
+  // `terraform apply` would have quietly STRIPPED the protection the operator
+  // set. prevent_destroy below only guards Terraform's own destroys; this
+  // guards everyone else's.
+  deletion_protection = true
 
   boot_disk {
+    // The disk must OUTLIVE the machine. auto_delete defaults to true, and
+    // true arms a data-loss coupling: delete the instance for any reason --
+    // console mistake, quota reaper, a future migration -- and a third of the
+    // analytics store goes with it. The live disks were created with this off;
+    // stating it keeps the plan honest and the coupling disarmed.
+    auto_delete = false
+
     initialize_params {
       size = each.value.disk_size_gb
     }

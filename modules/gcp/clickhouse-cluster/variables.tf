@@ -24,6 +24,10 @@ variable "nodes" {
     zone         = string
     machine_type = string
     disk_size_gb = number
+    // Instance metadata, verbatim from the live node. Holds NAMES (which
+    // Secret Manager entry to read), never values. Optional because the live
+    // nodes genuinely differ -- see the env for the asymmetry.
+    metadata = optional(map(string), {})
   }))
 }
 
@@ -63,4 +67,17 @@ variable "health_check_source_ranges" {
 variable "health_check_ports" {
   description = "Ports visible to Google's health checkers. Production exposes only ClickHouse HTTP on 8123."
   type        = list(string)
+}
+
+variable "internal_description" {
+  description = "The live rule's description, verbatim. Omitting it plans a change that nulls it."
+  type        = string
+}
+
+variable "health_check_description" {
+  type = string
+}
+
+variable "service_account_display_name" {
+  type = string
 }

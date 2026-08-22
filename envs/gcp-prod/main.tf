@@ -40,10 +40,17 @@ module "clickhouse" {
   network_tag        = var.network_tag
 
   internal_firewall_name = var.internal_firewall_name
-  internal_source_ranges  = var.internal_source_ranges
-  internal_ports          = var.internal_ports
+  internal_source_ranges = var.internal_source_ranges
+  internal_ports         = var.internal_ports
 
   health_check_firewall_name = var.health_check_firewall_name
-  health_check_source_ranges  = var.health_check_source_ranges
-  health_check_ports          = var.health_check_ports
+  health_check_source_ranges = var.health_check_source_ranges
+  health_check_ports         = var.health_check_ports
+
+  // The live objects' human-written strings, verbatim. These exist on the real
+  // resources; a config that omits them plans to null them, and the plan stops
+  // being a drift detector the day it is permanently dirty.
+  internal_description         = "ClickHouse HTTP+native, VPC-internal only"
+  health_check_description     = "GCP health checks for private ClickHouse ILB"
+  service_account_display_name = "TrustedRouter ClickHouse replicas"
 }
