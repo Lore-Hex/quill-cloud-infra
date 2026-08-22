@@ -93,12 +93,14 @@ resource "azurerm_user_assigned_identity" "node" {
 }
 
 resource "azurerm_network_interface" "node" {
-  name                = "${var.vm_name}-nic"
+  name                = var.nic_name
   location            = var.location
   resource_group_name = var.resource_group_name
 
   ip_configuration {
-    name                          = "internal"
+    // The live name, minted by `az vm create` as ipconfig<vm-name>. Renaming
+    // an adopted NIC's ipconfig buys nothing and churns a live interface.
+    name                          = var.ipconfig_name
     subnet_id                     = azurerm_subnet.clickhouse.id
     private_ip_address_allocation = "Dynamic"
     // No public_ip_address_id. Its absence is the security property.
@@ -115,11 +117,28 @@ resource "azurerm_linux_virtual_machine" "node" {
   admin_username                  = var.admin_username
   network_interface_ids           = [azurerm_network_interface.node.id]
   disable_password_authentication = true
-  custom_data                     = var.custom_data_base64
+  // The live setting; the provider default is false, so leaving it unstated
+  // would DISABLE the VM agent's platform updates on the first apply -- the
+  // same shape as GCP's deletion_protection: an imported resource inherits
+  // the provider default into its plan unless the config states what is true.
+  vm_agent_platform_updates_enabled = true
+  // Empty means "not stated": custom_data is write-only in the Azure API, so
+  // an ADOPTED machine can never have it in config without planning a replace.
+  // ignore_changes below covers drift; this covers validation, which rejects
+  // a non-base64 placeholder before ignore_changes is ever consulted.
+  custom_data = var.custom_data_base64 == "" ? null : var.custom_data_base64
 
-  admin_ssh_key {
-    username   = var.admin_username
-    public_key = var.admin_ssh_public_key
+  // Same shape for the SSH key: the live node was built with the operator's
+  // key, the API does not return it, and azurerm validates the config value's
+  // FORMAT at plan time -- so a placeholder breaks the plan and a real-but-
+  // different key plans a REPLACE of the machine that holds the data. Omit the
+  // block entirely when unstated, and never let it replace the node.
+  dynamic "admin_ssh_key" {
+    for_each = var.admin_ssh_public_key == "" ? [] : [1]
+    content {
+      username   = var.admin_username
+      public_key = var.admin_ssh_public_key
+    }
   }
 
   identity {
@@ -149,7 +168,7 @@ resource "azurerm_linux_virtual_machine" "node" {
     // script: changing it is meaningless to an already-booted node, but
     // Terraform reads the diff as "replace the machine".
     prevent_destroy = true
-    ignore_changes  = [custom_data]
+    ignore_changes  = [custom_data, admin_ssh_key]
   }
 
   tags = var.tags

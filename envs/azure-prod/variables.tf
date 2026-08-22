@@ -37,11 +37,13 @@ variable "key_vault_id" {
 }
 
 variable "admin_ssh_public_key" {
-  description = "Public half only. Break-glass from inside the VNet; the normal path is `az vm run-command` through the VM agent."
+  description = "Public half only; empty omits the block on the adopted node."
   type        = string
+  default     = ""
 }
 
 variable "clickhouse_custom_data_base64" {
-  description = "Base64 cloud-config for the node. See the module's variable docs for the YAML trap it must avoid."
+  description = "Base64 cloud-config for the node; empty on the adopted node (write-only in the API). See the module's variable docs for the YAML trap it must avoid."
   type        = string
+  default     = ""
 }

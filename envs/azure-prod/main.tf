@@ -46,6 +46,8 @@ module "clickhouse" {
   nsg_name      = "tr-azure-clickhouse-nsg"
   identity_name = "tr-azure-clickhouse-identity"
   vm_name       = "tr-azure-clickhouse-1"
+  nic_name      = "tr-azure-clickhouse-1VMNic"
+  ipconfig_name = "ipconfigtr-azure-clickhouse-1"
 
   admin_ssh_public_key = var.admin_ssh_public_key
   custom_data_base64   = var.clickhouse_custom_data_base64

@@ -44,6 +44,17 @@ variable "vm_name" {
   type = string
 }
 
+variable "ipconfig_name" {
+  description = "The live ip_configuration name, verbatim (az vm create mints ipconfig<vm-name>)."
+  type        = string
+  default     = "internal"
+}
+
+variable "nic_name" {
+  description = "The live NIC's name, verbatim. `az vm create` names it <vm>VMNic (no dash); a config that assumes its own convention probes for a NIC that does not exist and reports the real one as missing."
+  type        = string
+}
+
 variable "vm_size" {
   description = <<-EOT
     Pick this by what ARM will actually ACCEPT, not by what the quota and SKU
@@ -74,8 +85,9 @@ variable "admin_username" {
 }
 
 variable "admin_ssh_public_key" {
-  description = "Public half only. The node has no public IP, so this is a break-glass path from inside the VNet, not the normal way in -- that is `az vm run-command`, which goes through the VM agent."
+  description = "Public half only; empty omits the block (adopted nodes: the API never returns the key, and a differing value plans a REPLACE of the data-bearing machine)."
   type        = string
+  default     = ""
 }
 
 variable "custom_data_base64" {
@@ -92,6 +104,7 @@ variable "custom_data_base64" {
   EOT
   type        = string
   sensitive   = false
+  default     = ""
 }
 
 variable "image_publisher" {

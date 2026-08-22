@@ -56,8 +56,6 @@ adopt() {
   terraform import -input=false \
     -var "subscription_id=${SUB}" \
     -var "key_vault_id=${KV_ID}" \
-    -var "admin_ssh_public_key=unused-during-import" \
-    -var "clickhouse_custom_data_base64=unused-during-import" \
     "$addr" "$id" >/dev/null && {
       STATE="${STATE}"$'\n'"$addr"
       echo "  imported: ${addr}"
@@ -74,7 +72,7 @@ adopt 'module.clickhouse.azurerm_subnet_network_security_group_association.click
 adopt 'module.clickhouse.azurerm_user_assigned_identity.node' \
   "$(az identity show -g "$RG" -n "$IDENTITY" --query id -o tsv 2>/dev/null || true)"
 adopt 'module.clickhouse.azurerm_network_interface.node' \
-  "$(az network nic show -g "$RG" -n "${VM}-nic" --query id -o tsv 2>/dev/null || true)"
+  "$(az network nic show -g "$RG" -n "${VM}VMNic" --query id -o tsv 2>/dev/null || true)"
 adopt 'module.clickhouse.azurerm_linux_virtual_machine.node' \
   "$(az vm show -g "$RG" -n "$VM" --query id -o tsv 2>/dev/null || true)"
 
@@ -106,6 +104,4 @@ echo "=== drift (expect: no changes, or additions you can explain)"
 terraform plan -input=false -no-color \
   -var "subscription_id=${SUB}" \
   -var "key_vault_id=${KV_ID}" \
-  -var "admin_ssh_public_key=${ADMIN_SSH_PUBLIC_KEY:-unused}" \
-  -var "clickhouse_custom_data_base64=${CLICKHOUSE_CUSTOM_DATA_BASE64:-unused}" \
   2>&1 | tail -6
