@@ -92,3 +92,21 @@ variable "dsql_cluster_id" {
   type        = string
   default     = "tnt642i3ofzpn5z62msacutpuu"
 }
+
+variable "private_egress_subnet_ids" {
+  description = "The live tr-eu-vpc-private connector's subnets, verbatim. Immutable on the connector: a wrong value plans its replacement."
+  type        = list(string)
+  default     = ["subnet-02bf657680a20cc32", "subnet-02c00be7f803c5ec9"]
+}
+
+variable "private_egress_security_group_ids" {
+  description = "The live connector's OWN security group -- not the ClickHouse node's."
+  type        = list(string)
+  default     = ["sg-024287194699657d8"]
+}
+
+variable "control_plane_fargate_sg_id" {
+  description = "tr-cp-fargate-sg -- the control plane's Fargate SG, admitted to 8123 on the live rule."
+  type        = string
+  default     = "sg-0158d8dbd22c5038f"
+}

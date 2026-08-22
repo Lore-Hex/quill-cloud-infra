@@ -39,20 +39,6 @@ data "aws_vpc" "clickhouse" {
   id = var.vpc_id
 }
 
-data "aws_subnet" "app_runner_private" {
-  for_each = toset(var.app_runner_private_subnet_names)
-
-  filter {
-    name   = "tag:Name"
-    values = [each.value]
-  }
-
-  filter {
-    name   = "vpc-id"
-    values = [var.vpc_id]
-  }
-}
-
 data "aws_kms_alias" "secretsmanager" {
   name = "alias/aws/secretsmanager"
 }
@@ -133,24 +119,14 @@ data "aws_iam_policy_document" "clickhouse" {
   }
 }
 
-// This older, narrower grant may coexist with the consolidated policy above.
-// It still gets a stable resource address: import.sh probes it and adopts it
-// only when AWS says it is present. An API error is fatal, never "absent".
-data "aws_iam_policy_document" "dsql_connect_drain" {
-  statement {
-    effect    = "Allow"
-    actions   = ["dsql:DbConnect"]
-    resources = ["arn:aws:dsql:${var.region}:${var.account_id}:cluster/${var.dsql_cluster_id}"]
-  }
-}
-
-locals {
-  app_runner_private_subnet_ids = [
-    for name in var.app_runner_private_subnet_names : data.aws_subnet.app_runner_private[name].id
-  ]
-}
-
 module "clickhouse" {
+  // The 8123 SG reference is tr-cp-fargate-sg ("TR control-plane Fargate
+  // tasks"): the plane's own read path into its analytics store.
+  ingress_rules = {
+    http   = { port = 8123, security_groups = [var.control_plane_fargate_sg_id] }
+    native = { port = 9000 }
+  }
+
   source = "../../modules/aws/clickhouse-node"
 
   vpc_id    = var.vpc_id
@@ -160,12 +136,15 @@ module "clickhouse" {
   security_group_name        = var.security_group_name
   security_group_description = "ClickHouse for the AWS-EU cloud; VPC-internal only"
 
-  role_name          = var.role_name
-  role_description   = "Least-privilege role for ${var.instance_name}. Split from quill-enclave-role 2026-08-17."
+  role_name = var.role_name
+  // The live string VERBATIM, including the second sentence. It is incident
+  // documentation living in AWS -- the record of why this role was split and
+  // what the old shared role over-granted. Truncating it in config would have
+  // applied the truncation to the cloud.
+  role_description   = "Least-privilege role for ${var.instance_name}. Split from quill-enclave-role 2026-08-17: that role granted secretsmanager quill/* (~40 provider API keys) and kms:Decrypt on key/* to a non-enclave analytics host."
   assume_role_policy = data.aws_iam_policy_document.clickhouse_assume_role.json
   inline_policies = {
     (var.inline_policy_name) = data.aws_iam_policy_document.clickhouse.json
-    "dsql-connect-drain"    = data.aws_iam_policy_document.dsql_connect_drain.json
   }
   managed_policy_arns = [
     "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
@@ -188,8 +167,8 @@ module "clickhouse" {
 // relationship between components, not an intrinsic property of an EC2 node.
 resource "aws_apprunner_vpc_connector" "clickhouse" {
   vpc_connector_name = var.clickhouse_vpc_connector_name
-  subnets             = [var.clickhouse_subnet_id]
-  security_groups     = [module.clickhouse.security_group_id]
+  subnets            = [var.clickhouse_subnet_id]
+  security_groups    = [module.clickhouse.security_group_id]
 
   lifecycle {
     // Connector network membership is immutable. Replacement while a released
@@ -200,8 +179,14 @@ resource "aws_apprunner_vpc_connector" "clickhouse" {
 
 resource "aws_apprunner_vpc_connector" "private_egress" {
   vpc_connector_name = var.private_egress_vpc_connector_name
-  subnets             = local.app_runner_private_subnet_ids
-  security_groups     = [module.clickhouse.security_group_id]
+  // The LIVE connector's own subnets and its own security group, verbatim.
+  // A connector is immutable -- App Runner replaces it on any change -- so a
+  // guessed value here is not drift, it is a plan to DESTROY the connector
+  // every App Runner egress path rides on. It does not share the ClickHouse
+  // node's SG, and assuming it did is exactly the kind of tidy-looking
+  // unification an import plan exists to catch.
+  subnets         = var.private_egress_subnet_ids
+  security_groups = var.private_egress_security_group_ids
 
   lifecycle {
     // All App Runner egress uses this connector; replacing it couples an

@@ -54,13 +54,18 @@ resource "aws_security_group" "clickhouse" {
 
   // One rule PER PORT because that is the shape the live SG has. Combining
   // 8123 and 9000 into a range would also expose every port between them.
+  // 8123 also admits the control plane's Fargate tasks BY SECURITY GROUP.
+  // That reference is live access: omitting it does not tidy the config, it
+  // plans to sever the control plane from its own analytics store. Modeled
+  // per-port so 9000 stays VPC-only.
   dynamic "ingress" {
-    for_each = var.ingress_ports
+    for_each = var.ingress_rules
     content {
-      from_port   = ingress.value
-      to_port     = ingress.value
-      protocol    = "tcp"
-      cidr_blocks = [var.vpc_cidr]
+      from_port       = ingress.value.port
+      to_port         = ingress.value.port
+      protocol        = "tcp"
+      cidr_blocks     = [var.vpc_cidr]
+      security_groups = ingress.value.security_groups
     }
   }
 
@@ -140,19 +145,22 @@ resource "aws_instance" "node" {
   }
 
   // !!! REVIEWER FOLLOW-UP -- MAKE THIS A SEPARATE, EXPLICIT COMMIT !!!
-  // The live node's disableApiTermination is FALSE. This line describes that
-  // unsafe reality so adoption starts from a clean, honest plan; it does NOT
-  // pretend the API guard is already on. After import is reviewed, flip this
-  // to true together with delete_on_termination below.
-  disable_api_termination = false
+  // ON, deliberately, since 2026-08-22 -- this was the one analytics node in
+  // the fleet with no termination guard. Its GCP siblings carry
+  // deletion_protection and disks that outlive their machines; this node had
+  // neither, and its root volume IS the store. Flipped as an explicit,
+  // reviewed apply immediately after adoption, not smuggled into the import.
+  disable_api_termination = true
 
   root_block_device {
-    // !!! REVIEWER FOLLOW-UP -- FLIP BOTH GUARDS IN THE SAME FOLLOW-UP !!!
     // The live root volume is DeleteOnTermination=TRUE. The disk IS the
     // analytics store. Do not silently rewrite history during adoption: first
     // import and prove the plan, then make false here and true above an
     // explicit protection change somebody can review on its own.
-    delete_on_termination = true
+    // The disk must OUTLIVE the machine: with this true, any instance
+    // deletion -- console mistake, quota reaper, migration -- took the
+    // analytics store with it. Same rationale as auto_delete=false on GCP.
+    delete_on_termination = false
   }
 
   lifecycle {

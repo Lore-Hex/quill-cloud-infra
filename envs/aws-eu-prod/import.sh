@@ -37,10 +37,21 @@ PRIVATE_CONNECTOR="${PRIVATE_EGRESS_VPC_CONNECTOR_NAME:-tr-eu-vpc-private}"
 # discarding its stderr makes an error -- a held lock, a backend problem --
 # indistinguishable from "not in state", and the script then imports something
 # it already manages.
-STATE="$(terraform state list)" || {
+# The S3 backend ERRORS on a brand-new state file where the gcs and azurerm
+# backends return empty output with exit 0 -- so "nothing is managed yet" and
+# "could not read state" arrive through the same exit code. Only the specific
+# first-run message is treated as an empty snapshot; every other failure still
+# refuses to guess.
+if STATE="$(terraform state list 2>&1)"; then
+  :
+elif printf '%s' "$STATE" | grep -q "No state file was found"; then
+  STATE=""
+else
+  printf '%s
+' "$STATE" >&2
   echo "terraform state list failed; refusing to guess what is already managed" >&2
   exit 1
-}
+fi
 
 adopt() {
   local addr="$1" id="$2"
@@ -174,10 +185,8 @@ echo "=== AWS-EU analytics role policies"
 PRIMARY_POLICY_ID="$(role_policy_import_id "$PRIMARY_POLICY")"
 # This grant may genuinely be absent. Only a successful AWS answer is allowed
 # to establish that; access-denied, auth and endpoint errors stop the script.
-DSQL_POLICY_ID="$(role_policy_import_id dsql-connect-drain)"
 SSM_ATTACHMENT_ID="$(managed_attachment_import_id "$SSM_POLICY")"
 adopt "module.clickhouse.aws_iam_role_policy.inline[\"${PRIMARY_POLICY}\"]" "$PRIMARY_POLICY_ID"
-adopt 'module.clickhouse.aws_iam_role_policy.inline["dsql-connect-drain"]' "$DSQL_POLICY_ID"
 adopt "module.clickhouse.aws_iam_role_policy_attachment.managed[\"${SSM_POLICY}\"]" "$SSM_ATTACHMENT_ID"
 
 echo "=== AWS-EU analytics node"

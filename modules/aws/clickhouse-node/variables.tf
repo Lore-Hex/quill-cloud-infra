@@ -25,10 +25,16 @@ variable "security_group_description" {
   type        = string
 }
 
-variable "ingress_ports" {
-  description = "ClickHouse HTTP and native ports, each represented by its own live ingress rule."
-  type        = set(number)
-  default     = [8123, 9000]
+variable "ingress_rules" {
+  description = "One live ingress rule per port. security_groups carries the SG references the live rule holds -- live access, never to be dropped for tidiness."
+  type = map(object({
+    port            = number
+    security_groups = optional(list(string), [])
+  }))
+  default = {
+    http   = { port = 8123 }
+    native = { port = 9000 }
+  }
 }
 
 variable "role_name" {
