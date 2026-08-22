@@ -64,7 +64,14 @@ resource "google_compute_firewall" "public_tls" {
 resource "google_compute_region_instance_group_manager" "regional" {
   for_each = var.regional_migs
 
-  name               = each.value.name
+  name = each.value.name
+  // On a regional MIG, description is IMMUTABLE: the provider marks any change
+  // "forces replacement". Omitting the live description therefore does not
+  // plan a cosmetic null -- it plans the DESTRUCTION and recreation of every
+  // gateway in the fleet, which prevent_destroy below turned from a proposal
+  // into an error during this module's first real plan. The string is uniform
+  // across regions, so it is derived rather than repeated four times.
+  description        = "quill enclave gateway in ${each.value.region} (DNS via attestation reconciler; 600s rollout readiness hold; no MIG autohealing)."
   project            = var.project_id
   region             = each.value.region
   base_instance_name = each.value.name
@@ -79,8 +86,12 @@ resource "google_compute_region_instance_group_manager" "regional" {
   }
 
   update_policy {
-    type                         = "PROACTIVE"
-    instance_redistribution_type = "PROACTIVE"
+    type = "PROACTIVE"
+    // Live asymmetry, not a typo: useast4 runs NONE while the other three run
+    // PROACTIVE. Normalizing it here would be a config file quietly making an
+    // operational decision; anyone reconciling it should change the MIG first
+    // and this default second.
+    instance_redistribution_type = lookup(each.value, "redistribution", "PROACTIVE")
     minimal_action               = "REPLACE"
     replacement_method           = "SUBSTITUTE"
     max_surge_fixed              = 3

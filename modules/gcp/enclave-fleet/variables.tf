@@ -16,6 +16,10 @@ variable "regional_migs" {
     zones             = list(string)
     target_size       = number
     instance_template = string
+    // Declared in BOTH copies of this type or terraform's conversion silently
+    // strips it from the default on the way into the module -- the third time
+    // this repo has hit that trap; see the clickhouse_nodes comment.
+    redistribution = optional(string, "PROACTIVE")
   }))
 }
 

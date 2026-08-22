@@ -114,6 +114,10 @@ variable "enclave_regional_migs" {
     zones             = list(string)
     target_size       = number
     instance_template = string
+    // Declared in BOTH copies of this type or terraform's conversion silently
+    // strips it from the default on the way into the module -- the third time
+    // this repo has hit that trap; see the clickhouse_nodes comment.
+    redistribution = optional(string, "PROACTIVE")
   }))
   default = {
     us = {
@@ -129,6 +133,10 @@ variable "enclave_regional_migs" {
       zones             = ["us-east4-a", "us-east4-b", "us-east4-c"]
       target_size       = 2
       instance_template = "quill-enclave-tpl-useast4-176" // c3-standard-4 at import
+      // Live asymmetry: this MIG alone runs NONE while its siblings run
+      // PROACTIVE. Reconcile on the MIG first, here second -- never by
+      // letting this file "fix" it as a side effect of an unrelated apply.
+      redistribution = "NONE"
     }
     sa = {
       name              = "quill-enclave-mig-sa"
