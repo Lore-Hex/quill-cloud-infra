@@ -8,7 +8,7 @@ Open-source infrastructure for [`quill-cloud-proxy`](https://github.com/Lore-Hex
 |------|-------|---------------|--------|
 | `envs/prod/` + `modules/*` | AWS `us-east-1` | S3 + DynamoDB lock | Terraform |
 | `envs/azure-prod/` + `modules/azure/*` | Azure `uaenorth` | Azure Blob (lease lock) | Terraform |
-| `gcp/` | GCP Confidential Space | — | **scripts, not yet Terraform** |
+| `envs/gcp-prod/` + `modules/gcp/*`; `gcp/bringup.sh` | GCP `us-central1` | GCS (generation lock) | Terraform (analytics); scripts (enclave fleet) |
 
 Each cloud keeps its Terraform state in ITS OWN cloud. Putting Azure's state in
 the S3 bucket would mean an AWS outage blocks every Azure change — including the
@@ -95,7 +95,8 @@ terraform apply
 
 ## GCP Confidential Space
 
-The GCP target is script-driven while the shape is still changing:
+The GCP Confidential Space enclave fleet stays script-driven while its measured
+deployment shape is still changing; the analytics cluster is now Terraform:
 
 ```bash
 cd gcp
