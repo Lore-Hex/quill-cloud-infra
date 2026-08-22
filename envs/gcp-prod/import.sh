@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Adopt the live GCP analytics cluster into Terraform state.
+# Adopt the live GCP analytics cluster and static enclave-fleet layout into
+# Terraform state.
 #
 # Every resource this root module describes already EXISTS. It was provisioned
 # before this configuration, which is the normal state of affairs for
@@ -7,10 +8,10 @@
 # happens here is an import, not an apply.
 #
 # The failure mode this prevents is not subtle: `terraform apply` against an
-# empty state would CREATE a second service account, firewall rules and three
-# ClickHouse machines beside the cluster holding the data, then leave two
-# competing layouts with no trustworthy owner. Each node's disk IS one third
-# of the analytics store.
+# empty state would CREATE duplicate service accounts, firewall rules, regional
+# MIG shells and ClickHouse machines beside production, then leave two competing
+# layouts with no trustworthy owner. Each ClickHouse node's disk IS one third of
+# the analytics store; deleting a MIG is an outage in that region.
 #
 # Safe to re-run: anything already in state is skipped, and anything absent from
 # GCP is reported rather than imported.
@@ -22,7 +23,8 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 PROJECT_ID="${PROJECT_ID:-quill-cloud-proxy}"
-SERVICE_ACCOUNT_EMAIL="tr-clickhouse@${PROJECT_ID}.iam.gserviceaccount.com"
+CLICKHOUSE_SERVICE_ACCOUNT_EMAIL="tr-clickhouse@${PROJECT_ID}.iam.gserviceaccount.com"
+WORKLOAD_SERVICE_ACCOUNT_EMAIL="quill-workload@${PROJECT_ID}.iam.gserviceaccount.com"
 
 # Snapshot state ONCE. Re-running `terraform state list` per resource and
 # discarding its stderr makes an error -- a held lock, a backend problem --
@@ -80,8 +82,9 @@ probe() {
 }
 
 service_account_import_id() {
-  probe "$SERVICE_ACCOUNT_EMAIL" iam service-accounts describe "$SERVICE_ACCOUNT_EMAIL" \
-    && printf 'projects/%s/serviceAccounts/%s' "$PROJECT_ID" "$SERVICE_ACCOUNT_EMAIL" \
+  local email="$1"
+  probe "$email" iam service-accounts describe "$email" \
+    && printf 'projects/%s/serviceAccounts/%s' "$PROJECT_ID" "$email" \
     || { [ $? -eq 10 ] && return 0 || return 1; }
 }
 
@@ -99,8 +102,15 @@ instance_import_id() {
     || { [ $? -eq 10 ] && return 0 || return 1; }
 }
 
+regional_mig_import_id() {
+  local name="$1" region="$2"
+  probe "regional MIG $name" compute instance-groups managed describe "$name" --region "$region" \
+    && printf 'projects/%s/regions/%s/instanceGroupManagers/%s' "$PROJECT_ID" "$region" "$name" \
+    || { [ $? -eq 10 ] && return 0 || return 1; }
+}
+
 echo "=== GCP analytics identity and firewall"
-SA_ID="$(service_account_import_id)"
+SA_ID="$(service_account_import_id "$CLICKHOUSE_SERVICE_ACCOUNT_EMAIL")"
 FW_INTERNAL_ID="$(firewall_import_id tr-clickhouse-internal)"
 FW_HC_ID="$(firewall_import_id tr-clickhouse-health-check)"
 adopt 'module.clickhouse.google_service_account.clickhouse' "$SA_ID"
@@ -114,6 +124,22 @@ NODE3_ID="$(instance_import_id tr-clickhouse-3 us-central1-c)"
 adopt 'module.clickhouse.google_compute_instance.node["tr-clickhouse-1"]' "$NODE1_ID"
 adopt 'module.clickhouse.google_compute_instance.node["tr-clickhouse-2"]' "$NODE2_ID"
 adopt 'module.clickhouse.google_compute_instance.node["tr-clickhouse-3"]' "$NODE3_ID"
+
+echo "=== GCP enclave static identity and public-TLS firewall"
+WORKLOAD_SA_ID="$(service_account_import_id "$WORKLOAD_SERVICE_ACCOUNT_EMAIL")"
+PUBLIC_TLS_FW_ID="$(firewall_import_id quill-allow-public-tls)"
+adopt 'module.enclave_fleet.google_service_account.workload' "$WORKLOAD_SA_ID"
+adopt 'module.enclave_fleet.google_compute_firewall.public_tls' "$PUBLIC_TLS_FW_ID"
+
+echo "=== GCP enclave regional MIG shells"
+MIG_US_ID="$(regional_mig_import_id quill-enclave-mig-us us-central1)"
+MIG_USEAST4_ID="$(regional_mig_import_id quill-enclave-mig-useast4 us-east4)"
+MIG_SA_ID="$(regional_mig_import_id quill-enclave-mig-sa southamerica-east1)"
+MIG_EU_ID="$(regional_mig_import_id quill-enclave-mig-eu europe-west4)"
+adopt 'module.enclave_fleet.google_compute_region_instance_group_manager.regional["us"]' "$MIG_US_ID"
+adopt 'module.enclave_fleet.google_compute_region_instance_group_manager.regional["useast4"]' "$MIG_USEAST4_ID"
+adopt 'module.enclave_fleet.google_compute_region_instance_group_manager.regional["sa"]' "$MIG_SA_ID"
+adopt 'module.enclave_fleet.google_compute_region_instance_group_manager.regional["eu"]' "$MIG_EU_ID"
 
 echo
 echo "=== drift (expect: no changes, or additions you can explain)"

@@ -8,7 +8,15 @@ Open-source infrastructure for [`quill-cloud-proxy`](https://github.com/Lore-Hex
 |------|-------|---------------|--------|
 | `envs/prod/` + `modules/*` | AWS `us-east-1` | S3 + DynamoDB lock | Terraform |
 | `envs/azure-prod/` + `modules/azure/*` | Azure `uaenorth` | Azure Blob (lease lock) | Terraform |
-| `envs/gcp-prod/` + `modules/gcp/*`; `gcp/bringup.sh` | GCP `us-central1` | GCS (generation lock) | Terraform (analytics); scripts (enclave fleet) |
+| `envs/gcp-prod/` + `modules/gcp/*`; proxy deploy tools | GCP (four enclave regions; analytics in `us-central1`) | GCS (generation lock) | Terraform (analytics + static enclave layout); deploy tools (measured templates) |
+
+The GCP enclave fleet is deliberately split at the row above. Terraform owns
+the **STATIC** half: the four regional MIG shells, workload service account and
+public-TLS firewall. `quill-cloud-proxy/tools/deploy-gcp-mig.sh` owns the
+**MEASURED** half: instance templates carrying the image digest and attested
+metadata rotate on every deploy behind attestation gates `plan`/`apply` cannot
+express. Terraform ignores each MIG's template version so it never rolls a
+verified measured release backward.
 
 Each cloud keeps its Terraform state in ITS OWN cloud. Putting Azure's state in
 the S3 bucket would mean an AWS outage blocks every Azure change — including the
@@ -95,8 +103,8 @@ terraform apply
 
 ## GCP Confidential Space
 
-The GCP Confidential Space enclave fleet stays script-driven while its measured
-deployment shape is still changing; the analytics cluster is now Terraform:
+The GCP production Terraform root adopts analytics and the static enclave-fleet
+layout. Measured template releases remain script-driven:
 
 ```bash
 cd gcp

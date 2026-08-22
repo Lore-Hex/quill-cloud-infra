@@ -105,3 +105,62 @@ variable "health_check_ports" {
   type    = list(string)
   default = ["8123"]
 }
+
+variable "enclave_regional_migs" {
+  description = "The four live regional enclave MIG shells. Template names record only the import moment; measured deploy tooling owns every subsequent rotation."
+  type = map(object({
+    name              = string
+    region            = string
+    zones             = list(string)
+    target_size       = number
+    instance_template = string
+  }))
+  default = {
+    us = {
+      name              = "quill-enclave-mig-us"
+      region            = "us-central1"
+      zones             = ["us-central1-b", "us-central1-c", "us-central1-f"]
+      target_size       = 2
+      instance_template = "quill-enclave-tpl-us-313" // c3-standard-4 at import
+    }
+    useast4 = {
+      name              = "quill-enclave-mig-useast4"
+      region            = "us-east4"
+      zones             = ["us-east4-a", "us-east4-b", "us-east4-c"]
+      target_size       = 2
+      instance_template = "quill-enclave-tpl-useast4-176" // c3-standard-4 at import
+    }
+    sa = {
+      name              = "quill-enclave-mig-sa"
+      region            = "southamerica-east1"
+      zones             = ["southamerica-east1-a", "southamerica-east1-b", "southamerica-east1-c"]
+      target_size       = 2
+      instance_template = "quill-enclave-tpl-sa-024" // n2d-standard-4 at import
+    }
+    eu = {
+      name              = "quill-enclave-mig-eu"
+      region            = "europe-west4"
+      zones             = ["europe-west4-a", "europe-west4-b", "europe-west4-c"]
+      target_size       = 2
+      instance_template = "quill-enclave-tpl-eu-295" // c3-standard-4 at import
+    }
+  }
+}
+
+variable "enclave_service_account_id" {
+  description = "Account id for quill-workload@quill-cloud-proxy.iam.gserviceaccount.com, shared by the measured enclave templates."
+  type        = string
+  default     = "quill-workload"
+}
+
+variable "enclave_public_tls_firewall_name" {
+  description = "Public ingress rule for the attested TLS gateways."
+  type        = string
+  default     = "quill-allow-public-tls"
+}
+
+variable "enclave_network_tag" {
+  description = "Target tag applied by enclave templates and selected by the public-TLS firewall."
+  type        = string
+  default     = "quill-enclave"
+}

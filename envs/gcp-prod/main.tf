@@ -1,11 +1,11 @@
-// The GCP production analytics layout.
+// The GCP production layout.
 //
 // This root module describes what EXISTS today, so `terraform plan` is a drift
 // detector rather than a wish. Everything here was provisioned before this file
 // and must be IMPORTED, not created -- see README. A plan that proposes to
 // create any of it means the import did not happen, and applying it would build
-// a second copy of a live analytics cluster beside the one holding the data.
-// Each node's disk is one third of that store.
+// duplicate infrastructure beside live production. Each ClickHouse node's disk
+// is one third of the analytics store; each enclave MIG serves a whole region.
 //
 // WHAT IS AND IS NOT HERE
 //
@@ -15,12 +15,16 @@
 //            looked up because adopting a cluster is not permission to redesign
 //            its network.
 //
-//   IS NOT:  the enclave managed instance groups (`quill-enclave-mig-*`). Those
-//            are measured deploys owned by quill-cloud-proxy tooling: the
-//            workload image, launch policy and live attestation must move as a
-//            coordinated release. plan/apply cannot express that verification
-//            step, so the enclave fleet stays in gcp/bringup.sh and the proxy's
-//            deployment tools.
+//   IS:      the STATIC half of the enclave fleet: regional MIG shells, the
+//            workload service account, and the public-TLS firewall. Stable
+//            layout belongs in this same GCP production state.
+//
+//   IS NOT:  the MEASURED half of the enclave fleet: instance templates carry
+//            the image digest and attested metadata. quill-cloud-proxy's
+//            tools/deploy-gcp-mig.sh rotates them on every deploy behind
+//            attestation gates plan/apply cannot express. The MIG resources
+//            therefore ignore their version; Terraform owns the shells, not
+//            the measured release.
 //
 //   IS NOT:  the control plane, its databases, KMS keys, secrets or load
 //            balancers. Those predate this file and are next; adding them means
@@ -53,4 +57,18 @@ module "clickhouse" {
   internal_description         = "ClickHouse HTTP+native, VPC-internal only"
   health_check_description     = "GCP health checks for private ClickHouse ILB"
   service_account_display_name = "TrustedRouter ClickHouse replicas"
+}
+
+module "enclave_fleet" {
+  source = "../../modules/gcp/enclave-fleet"
+
+  project_id    = var.project_id
+  network_name  = var.network_name
+  regional_migs = var.enclave_regional_migs
+
+  service_account_id           = var.enclave_service_account_id
+  service_account_display_name = "Quill Cloud workload (Confidential Space)"
+
+  public_tls_firewall_name = var.enclave_public_tls_firewall_name
+  network_tag              = var.enclave_network_tag
 }
