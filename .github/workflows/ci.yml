@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [envs/prod, envs/azure-prod, envs/gcp-prod]
+        env: [envs/prod, envs/azure-prod, envs/gcp-prod, envs/aws-eu-prod]
     defaults:
       run:
         working-directory: ${{ matrix.env }}
@@ -24,7 +24,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.7.5"
+          # aws-eu-prod uses S3 native lockfiles, which require Terraform 1.10+.
+          terraform_version: "1.10.5"
       - name: Format
         run: terraform fmt -check -recursive ../..
       - name: Init (no backend)

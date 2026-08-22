@@ -7,6 +7,7 @@ Open-source infrastructure for [`quill-cloud-proxy`](https://github.com/Lore-Hex
 | Path | Cloud | State backend | Status |
 |------|-------|---------------|--------|
 | `envs/prod/` + `modules/*` | AWS `us-east-1` | S3 + DynamoDB lock | Terraform |
+| `envs/aws-eu-prod/` + `modules/aws/*` | AWS `eu-west-3` | S3 (native lockfile) in `eu-west-3` | Terraform (analytics + VPC connectors); scripts (App Runner service) |
 | `envs/azure-prod/` + `modules/azure/*` | Azure `uaenorth` | Azure Blob (lease lock) | Terraform |
 | `envs/gcp-prod/` + `modules/gcp/*`; proxy deploy tools | GCP (four enclave regions; analytics in `us-central1`) | GCS (generation lock) | Terraform (analytics + static enclave layout); deploy tools (measured templates) |
 
