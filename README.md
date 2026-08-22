@@ -1,9 +1,35 @@
 # quill-cloud-infra
 
 Open-source infrastructure for [`quill-cloud-proxy`](https://github.com/Lore-Hex/quill-cloud-proxy).
-The Terraform stack provisions the AWS Nitro Enclave deployment in `us-east-1`;
-the `gcp/` scripts bring up the GCP Confidential Space deployment used while
-Vertex/OpenRouter routing is being validated.
+
+## Layout
+
+| Path | Cloud | State backend | Status |
+|------|-------|---------------|--------|
+| `envs/prod/` + `modules/*` | AWS `us-east-1` | S3 + DynamoDB lock | Terraform |
+| `envs/azure-prod/` + `modules/azure/*` | Azure `uaenorth` | Azure Blob (lease lock) | Terraform |
+| `gcp/` | GCP Confidential Space | — | **scripts, not yet Terraform** |
+
+Each cloud keeps its Terraform state in ITS OWN cloud. Putting Azure's state in
+the S3 bucket would mean an AWS outage blocks every Azure change — including the
+ones you would make to route around AWS — which is the hub dependency the
+multi-cloud split exists to avoid, reintroduced through a state file.
+
+Resources that predate their Terraform are **imported, never created**: each env
+has an `import.sh`, and applying against an empty state would build a second
+copy of live infrastructure beside the one holding the data.
+
+Two things stay outside Terraform on purpose, both because plan/apply cannot
+express them:
+
+* **Enclave container groups.** Their measurement changes on essentially every
+  deploy, and the Key Vault release policy must be widened *before* the group is
+  created and narrowed only *after* a live attestation is verified. A single
+  apply that swapped that pin in one step is the documented way to end up with
+  no group and no way back.
+* **Node bootstrap.** Installing ClickHouse, fetching a password and applying a
+  schema is a boot-time sequence with retries, not state to converge on.
+  Terraform owns the layout — subnet, NSG, identity, disk, machine.
 
 ## What it provisions
 
