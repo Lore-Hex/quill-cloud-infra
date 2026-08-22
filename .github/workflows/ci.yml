@@ -9,9 +9,17 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # Every environment, not just the first one. envs/prod was the only entry
+    # here while it was the only environment; a second env added without a
+    # matrix row is a Terraform config nothing ever validates, which is how a
+    # broken root module reaches a `terraform apply` against production.
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [envs/prod, envs/azure-prod]
     defaults:
       run:
-        working-directory: envs/prod
+        working-directory: ${{ matrix.env }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
