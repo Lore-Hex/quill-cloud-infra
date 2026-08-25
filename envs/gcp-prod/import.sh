@@ -141,6 +141,9 @@ adopt 'module.enclave_fleet.google_compute_region_instance_group_manager.regiona
 adopt 'module.enclave_fleet.google_compute_region_instance_group_manager.regional["sa"]' "$MIG_SA_ID"
 adopt 'module.enclave_fleet.google_compute_region_instance_group_manager.regional["eu"]' "$MIG_EU_ID"
 
+echo "=== Spanner instance (adopted 2026-08-25 after the launch-day capacity knee)"
+adopt 'module.spanner.google_spanner_instance.this' "${PROJECT_ID}/trusted-router-nam6"
+
 echo
 echo "=== drift (expect: no changes, or additions you can explain)"
 terraform plan -input=false -no-color \

@@ -172,3 +172,8 @@ variable "enclave_network_tag" {
   type        = string
   default     = "quill-enclave"
 }
+
+variable "spanner_instance_name" {
+  type    = string
+  default = "trusted-router-nam6"
+}

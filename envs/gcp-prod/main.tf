@@ -26,10 +26,16 @@
 //            therefore ignore their version; Terraform owns the shells, not
 //            the measured release.
 //
-//   IS NOT:  the control plane, its databases, KMS keys, secrets or load
-//            balancers. Those predate this file and are next; adding them means
-//            importing live state, which is a change worth reviewing on its own
-//            rather than bundled with adoption of the analytics cluster.
+//   IS:      the Spanner instance shell and its autoscaling policy -- adopted
+//            2026-08-25 after launch day proved a hand-sized instance is the
+//            whole fleet's single capacity knob (all three clouds authorize
+//            and settle through it). Databases and DDL stay app-owned.
+//
+//   IS NOT:  the control plane, its remaining databases' schema, KMS keys,
+//            secrets or load balancers. Those predate this file and are next;
+//            adding them means importing live state, which is a change worth
+//            reviewing on its own rather than bundled with adoption of the
+//            analytics cluster.
 
 module "clickhouse" {
   source = "../../modules/gcp/clickhouse-cluster"
@@ -57,6 +63,24 @@ module "clickhouse" {
   internal_description         = "ClickHouse HTTP+native, VPC-internal only"
   health_check_description     = "GCP health checks for private ClickHouse ILB"
   service_account_display_name = "TrustedRouter ClickHouse replicas"
+}
+
+module "spanner" {
+  source = "../../modules/gcp/spanner"
+
+  project_id    = var.project_id
+  instance_name = var.spanner_instance_name
+
+  // The live object's strings, verbatim (same rule as the descriptions above).
+  instance_config              = "nam6"
+  display_name                 = "TrustedRouter (nam6)"
+  edition                      = "ENTERPRISE_PLUS"
+  default_backup_schedule_type = "AUTOMATIC"
+
+  min_processing_units             = 1000
+  max_processing_units             = 4000
+  high_priority_cpu_target_percent = 55
+  storage_target_percent           = 90
 }
 
 module "enclave_fleet" {
