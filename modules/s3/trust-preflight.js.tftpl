@@ -1,0 +1,24 @@
+// CloudFront viewer-request function for the trust mirror (cloudfront-js-2.0).
+//
+// Answers every OPTIONS request at the edge with 204 and the mirror's CORS
+// headers. The S3 website origin cannot answer a preflight without a bucket
+// CORS rule and the Origin/Access-Control-Request-* headers, which this
+// distribution does not forward. Other requests pass through unchanged.
+// Rendered by modules/s3/main.tf; the values come from the same locals as
+// the response headers policy, so the preflight and GET answers cannot drift.
+function handler(event) {
+  var request = event.request;
+  if (request.method !== "OPTIONS") {
+    return request;
+  }
+  return {
+    statusCode: 204,
+    statusDescription: "No Content",
+    headers: {
+      "access-control-allow-origin": { value: "${allow_origin}" },
+      "access-control-allow-methods": { value: "${allow_methods}" },
+      "access-control-allow-headers": { value: "${allow_headers}" },
+      "access-control-max-age": { value: "${max_age_sec}" }
+    }
+  };
+}

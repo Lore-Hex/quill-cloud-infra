@@ -54,6 +54,60 @@ resource "aws_acm_certificate_validation" "trust" {
   certificate_arn = aws_acm_certificate.trust.arn
 }
 
+# ---- trust mirror CORS ----
+# The trust records are public, credential-free JSON and text. Browsers read
+# them cross-origin, and the JS SDK's policyFromTrustRelease() sends a
+# user-agent header, which is not CORS-safelisted, so a browser that honours
+# it sends a preflight first. Without this block, a GET carries no
+# Access-Control-Allow-Origin and OPTIONS gets 403 from CloudFront. That
+# leaves the mirror unreadable from a page.
+#
+# The response headers policy adds the headers to GET/HEAD responses. The
+# viewer-request function answers OPTIONS at the edge: the policy only adds
+# headers, so a forwarded OPTIONS would keep the S3 website origin's error
+# status. Both read these locals. No credentials: nothing here is cookie- or
+# auth-scoped.
+locals {
+  trust_cors_allow_origin  = "*"
+  trust_cors_allow_methods = ["GET", "HEAD", "OPTIONS"]
+  trust_cors_allow_headers = "*"
+  trust_cors_max_age_sec   = 600
+}
+
+resource "aws_cloudfront_response_headers_policy" "trust_cors" {
+  name    = "trust-mirror-cors"
+  comment = "Public, credential-free CORS for the static trust mirror"
+
+  cors_config {
+    access_control_allow_credentials = false
+    access_control_max_age_sec       = local.trust_cors_max_age_sec
+    origin_override                  = true
+
+    access_control_allow_headers {
+      items = [local.trust_cors_allow_headers]
+    }
+    access_control_allow_methods {
+      items = local.trust_cors_allow_methods
+    }
+    access_control_allow_origins {
+      items = [local.trust_cors_allow_origin]
+    }
+  }
+}
+
+resource "aws_cloudfront_function" "trust_preflight" {
+  name    = "trust-mirror-cors-preflight"
+  runtime = "cloudfront-js-2.0"
+  comment = "Answer CORS preflights for the trust mirror with 204"
+  publish = true
+  code = templatefile("${path.module}/trust-preflight.js.tftpl", {
+    allow_origin  = local.trust_cors_allow_origin
+    allow_methods = join(", ", local.trust_cors_allow_methods)
+    allow_headers = local.trust_cors_allow_headers
+    max_age_sec   = local.trust_cors_max_age_sec
+  })
+}
+
 resource "aws_cloudfront_distribution" "trust" {
   origin {
     domain_name = aws_s3_bucket_website_configuration.trust.website_endpoint
@@ -74,9 +128,16 @@ resource "aws_cloudfront_distribution" "trust" {
   aliases = ["${var.trust_sub}.${var.domain}"]
 
   default_cache_behavior {
-    allowed_methods  = ["GET", "HEAD"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "S3Website"
+    # OPTIONS never reaches S3: trust_preflight answers it at the edge.
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD"]
+    target_origin_id           = "S3Website"
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.trust_cors.id
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.trust_preflight.arn
+    }
 
     forwarded_values {
       query_string = false
