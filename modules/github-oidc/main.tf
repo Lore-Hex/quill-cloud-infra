@@ -23,6 +23,11 @@ resource "aws_iam_openid_connect_provider" "github" {
 
   lifecycle {
     prevent_destroy = true
+    # The live provider was recreated on 2026-08-02 outside this repo, with a
+    # different thumbprint and its own tags, and three main-only roles managed
+    # elsewhere depend on it. AWS ignores configured thumbprints for GitHub,
+    # so leave those values to whoever owns the live provider.
+    ignore_changes = [thumbprint_list, tags, tags_all]
   }
 }
 
