@@ -6,7 +6,22 @@
 #      CloudWatch Logs encryption. Standard policy.
 
 variable "parent_role_arn" { type = string }
-variable "published_pcr0_hex" { type = string }
+
+variable "published_pcr0_hex" {
+  description = "PCR0 of the published enclave image: 96 lowercase hex characters (SHA-384). Empty only together with allow_unattested_bootstrap."
+  type        = string
+
+  validation {
+    condition     = var.published_pcr0_hex == "" || (can(regex("^[0-9a-f]{96}$", var.published_pcr0_hex)) && !can(regex("^0+$", var.published_pcr0_hex)))
+    error_message = "published_pcr0_hex must be the enclave's PCR0: exactly 96 lowercase hex characters (SHA-384), not all zeros."
+  }
+}
+
+variable "allow_unattested_bootstrap" {
+  description = "Permit an empty published_pcr0_hex. That drops the PCR0 condition, so the parent host role can Decrypt device keys WITHOUT enclave attestation. Deliberate bootstrap only."
+  type        = bool
+  default     = false
+}
 
 data "aws_caller_identity" "current" {}
 
@@ -16,6 +31,15 @@ resource "aws_kms_key" "device_keys" {
   enable_key_rotation     = true
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.device_keys_policy.json
+
+  lifecycle {
+    # An empty PCR0 used to drop the attestation condition below silently.
+    # It is now a plan failure unless the bootstrap flag is set explicitly.
+    precondition {
+      condition     = var.published_pcr0_hex != "" || var.allow_unattested_bootstrap
+      error_message = "published_pcr0_hex is empty, which would let the parent host role Decrypt device keys without enclave attestation. Set it to the published enclave PCR0, or set allow_unattested_bootstrap = true for a deliberate unattested bootstrap."
+    }
+  }
 }
 
 resource "aws_kms_alias" "device_keys" {
@@ -53,9 +77,10 @@ data "aws_iam_policy_document" "device_keys_policy" {
     actions   = ["kms:Decrypt"]
     resources = ["*"]
 
-    # When published_pcr0_hex is empty (bootstrap), the condition is omitted —
-    # which means the role can Decrypt freely. Set this var BEFORE accepting
-    # any production traffic.
+    # Omitted only when published_pcr0_hex is empty, which the precondition on
+    # aws_kms_key.device_keys allows only with allow_unattested_bootstrap. The
+    # role can then Decrypt freely, so never run that way with production
+    # traffic.
     dynamic "condition" {
       for_each = var.published_pcr0_hex == "" ? [] : [1]
       content {

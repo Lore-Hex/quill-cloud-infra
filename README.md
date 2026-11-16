@@ -90,9 +90,12 @@ aws dynamodb create-table --table-name quill-tf-locks \
   --billing-mode PAY_PER_REQUEST --region us-east-1
 
 # 2. Apply by hand, with admin AWS creds. CI only runs fmt and validate.
+#    published_pcr0_hex (the enclave PCR0, 96 lowercase hex) is required:
+#    an empty value fails the plan unless allow_unattested_bootstrap=true,
+#    which drops the attestation condition from the device-keys key policy.
 cd envs/prod
 terraform init
-terraform apply
+terraform apply -var published_pcr0_hex=<published enclave PCR0>
 ```
 
 **The `quill-deploy` role was retired on 2026-11-16.** It no longer exists in

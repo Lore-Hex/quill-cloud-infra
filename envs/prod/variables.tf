@@ -23,10 +23,16 @@ variable "trust_subdomain" {
 }
 
 variable "published_pcr0_hex" {
-  description = "Published PCR0 of the deployed enclave. Empty = bootstrap mode (KMS condition is permissive until set)."
+  description = "Published PCR0 of the deployed enclave: 96 lowercase hex characters (SHA-384). Gates device-keys Decrypt via kms:RecipientAttestation:PCR0. Leaving it empty fails the plan unless allow_unattested_bootstrap = true."
   type        = string
   default     = ""
   sensitive   = false
+}
+
+variable "allow_unattested_bootstrap" {
+  description = "Deliberate bootstrap only: permits an empty published_pcr0_hex, which removes the PCR0 condition so the parent host role can Decrypt device keys without attestation. Never set it while production traffic is served."
+  type        = bool
+  default     = false
 }
 
 variable "openrouter_secret_id" {

@@ -9,9 +9,10 @@ module "network" {
 }
 
 module "kms" {
-  source             = "../../modules/kms"
-  parent_role_arn    = module.iam.parent_role_arn
-  published_pcr0_hex = var.published_pcr0_hex
+  source                     = "../../modules/kms"
+  parent_role_arn            = module.iam.parent_role_arn
+  published_pcr0_hex         = var.published_pcr0_hex
+  allow_unattested_bootstrap = var.allow_unattested_bootstrap
 }
 
 module "dynamodb" {
