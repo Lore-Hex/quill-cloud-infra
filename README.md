@@ -51,9 +51,9 @@ express them:
 | `kms`           | Two CMKs: device-keys-cmk (PCR0-attested decrypt), data-cmk (DDB+S3 SSE).   |
 | `ecr`           | Repo for parent + enclave images, AWS Signer signing profile.              |
 | `dynamodb`      | `quill_usage` table — see schema below.                                     |
-| `iam`           | Parent-host role + GitHub OIDC deploy role, both least-privilege.           |
+| `iam`           | Parent-host role, least-privilege.                                          |
 | `s3`            | Buckets for sealed device-key blob, trust page, ALB access logs.            |
-| `github-oidc`   | OIDC provider trust + role assumable by Lore-Hex/quill-cloud-{proxy,infra}.|
+| `github-oidc`   | Shared GitHub Actions OIDC provider only (no role; see below).              |
 | `cloudtrail`    | Multi-region trail with Object Lock, dedicated bucket.                      |
 
 ## DynamoDB `quill_usage` schema
@@ -89,19 +89,22 @@ aws dynamodb create-table --table-name quill-tf-locks \
   --key-schema AttributeName=LockID,KeyType=HASH \
   --billing-mode PAY_PER_REQUEST --region us-east-1
 
-# 2. First apply provisions only the GitHub OIDC trust + deploy role,
-#    so subsequent applies can run as that role from CI.
+# 2. Apply by hand, with admin AWS creds. CI only runs fmt and validate.
 cd envs/prod
 terraform init
-terraform apply -target=module.github_oidc
-
-# 3. Add the role ARN to GitHub repo secrets:
-#    Lore-Hex/quill-cloud-proxy: AWS_DEPLOY_ROLE_ARN
-#    Lore-Hex/quill-cloud-infra: AWS_DEPLOY_ROLE_ARN
-
-# 4. Subsequent applies happen via GitHub Actions OIDC.
 terraform apply
 ```
+
+**The `quill-deploy` role was retired on 2026-11-16.** It no longer exists in
+AWS, and `modules/github-oidc` now keeps only the shared GitHub OIDC provider,
+which must never be destroyed or replaced because other roles federate through
+it. GitHub workflows use main-only roles managed in quill-router. The old role
+must not come back: it trusted `pull_request` tokens as well as pushes to
+`main` and carried `AdministratorAccess`, so any pull-request workflow in the
+trusted repos could act as an administrator of the whole account. The
+`removed` blocks in `modules/github-oidc` drop it from state without
+destroying anything, and make plan fail if it is declared again at its old
+address.
 
 ## GCP Confidential Space
 

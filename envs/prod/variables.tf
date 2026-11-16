@@ -29,15 +29,6 @@ variable "published_pcr0_hex" {
   sensitive   = false
 }
 
-variable "github_repos" {
-  description = "Repos allowed to assume the GitHub OIDC deploy role."
-  type        = list(string)
-  default = [
-    "Lore-Hex/quill-cloud-proxy",
-    "Lore-Hex/quill-cloud-infra",
-  ]
-}
-
 variable "openrouter_secret_id" {
   description = "Secrets Manager secret-id holding the OpenRouter API key. Set via TF_VAR_openrouter_secret_id when deploying the openrouter-target enclave; null otherwise."
   type        = string

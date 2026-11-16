@@ -15,11 +15,6 @@ output "ecr_repo_url" {
   value = module.ecr.repo_url
 }
 
-output "github_oidc_role_arn" {
-  description = "Add this to GitHub repo secrets as AWS_DEPLOY_ROLE_ARN."
-  value       = module.github_oidc.deploy_role_arn
-}
-
 output "trust_cloudfront_domain" {
   description = "Point trust.quill at this in Cloudflare (DNS-only) for HTTPS."
   value       = module.s3.trust_cloudfront_domain

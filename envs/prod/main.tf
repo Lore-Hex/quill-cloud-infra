@@ -74,9 +74,10 @@ module "compute" {
   enclave_image_tag       = var.enclave_image_tag
 }
 
+# The shared GitHub OIDC provider only. The quill-deploy role this module
+# used to create was retired on 2026-11-16 (see the module for why).
 module "github_oidc" {
-  source       = "../../modules/github-oidc"
-  github_repos = var.github_repos
+  source = "../../modules/github-oidc"
 }
 
 module "cloudtrail" {

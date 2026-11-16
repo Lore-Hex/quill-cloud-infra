@@ -36,21 +36,12 @@ data "aws_iam_policy_document" "device_keys_policy" {
     resources = ["*"]
   }
 
-  # 2) Operator (admin role assumed via OIDC) — Encrypt only, not Decrypt.
-  #    Operator can re-seal the blob with new keys but CANNOT read the
-  #    current contents. (Decrypt is reserved for the attested enclave.)
-  statement {
-    sid    = "OperatorMayEncryptOnly"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/quill-deploy"]
-    }
-    actions   = ["kms:Encrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
-    resources = ["*"]
-  }
+  # No operator statement. It named only the quill-deploy role, retired on
+  # 2026-11-16. A key policy may name only principals that exist (KMS rejects
+  # the whole document otherwise), and RootKeyAdmin already lets IAM policies
+  # in this account grant Encrypt for re-sealing.
 
-  # 3) Parent host role — Decrypt allowed only when the request comes from
+  # 2) Parent host role: Decrypt allowed only when the request comes from
   #    a Nitro Enclave whose PCR0 matches the published measurement.
   statement {
     sid    = "AttestedEnclaveDecryptOnly"
@@ -102,19 +93,10 @@ data "aws_iam_policy_document" "data_policy" {
     resources = ["*"]
   }
 
-  # 2) Deploy role access
-  statement {
-    sid    = "OperatorAccess"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/quill-deploy"]
-    }
-    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
-    resources = ["*"]
-  }
+  # No deploy-role statement: it named only the quill-deploy role, retired on
+  # 2026-11-16 (see the device-keys policy above).
 
-  # 3) Parent host access
+  # 2) Parent host access
   statement {
     sid    = "ParentHostAccess"
     effect = "Allow"
@@ -126,7 +108,7 @@ data "aws_iam_policy_document" "data_policy" {
     resources = ["*"]
   }
 
-  # 4) CloudTrail access
+  # 3) CloudTrail access
   statement {
     sid    = "CloudTrailAccess"
     effect = "Allow"

@@ -5,7 +5,8 @@
 #       Query on quill_usage, s3:GetObject on the sealed-blob bucket,
 #       s3:PutObject on the trust-page bucket (for atomic pcr0.txt updates),
 #       ecr pull on the proxy repo, basic CloudWatch Logs (heartbeat group only).
-#   - (github-oidc deploy role lives in its own module)
+#   - (no GitHub deploy role: the quill-deploy role was retired on 2026-11-16;
+#     the github-oidc module keeps only the shared OIDC provider)
 
 variable "region" { type = string }
 variable "device_keys_kms_arn" { type = string }
