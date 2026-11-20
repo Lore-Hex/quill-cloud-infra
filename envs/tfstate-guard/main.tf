@@ -32,13 +32,22 @@
 // else. CI must never apply this root: an identity that can rewrite the policy
 // could lift it.
 //
+// ONE IDENTITY THROUGHOUT. The backend and the providers must authenticate as
+// the same IAM user, which Terraform cannot check: the backend can carry its
+// own credentials. Run init, plan and apply in one shell with one AWS_PROFILE,
+// pass no -backend-config, and apply a plan made by that same identity (a
+// saved plan keeps its planner as the allowed administrator). A backend
+// identity outside the policy would lose access to this state mid-apply.
+//
 // If the policy ever locks out the administrator, the account root user can
-// always read, replace or delete a bucket policy, even one that denies it.
+// read, replace or delete a bucket policy even when it denies root, unless an
+// Organizations or VPC endpoint policy blocks those calls.
 //
 //   cd envs/tfstate-guard
-//   terraform init
-//   terraform plan    # two aws_s3_bucket_policy to add
-//   terraform apply
+//   aws sts get-caller-identity          # the administrator's IAM user
+//   terraform init -reconfigure
+//   terraform plan -out=guard.tfplan     # two aws_s3_bucket_policy to add
+//   terraform apply guard.tfplan
 //
 // This root's own state sits in quill-tf-state-prod under its own key, so the
 // policy guards it too.
@@ -73,10 +82,20 @@ locals {
   // identities. Everything else is denied to them.
   config_reads = [
     "s3:GetBucket*",
+    "s3:GetAccelerateConfiguration",
+    "s3:GetAnalyticsConfiguration",
     "s3:GetEncryptionConfiguration",
+    "s3:GetIntelligentTieringConfiguration",
+    "s3:GetInventoryConfiguration",
     "s3:GetLifecycleConfiguration",
+    "s3:GetMetricsConfiguration",
     "s3:GetReplicationConfiguration",
+    "s3:ListTagsForResource",
   ]
+
+  // Only an IAM user of this account: a role session's caller ARN is the STS
+  // session, not the role ARN that S3 compares.
+  applied_by_iam_user = startswith(data.aws_caller_identity.current.arn, "arn:aws:iam::${local.account_id}:user/")
 
   state_admins = [
     data.aws_caller_identity.current.arn,
@@ -139,7 +158,7 @@ resource "aws_s3_bucket_policy" "prod" {
 
   lifecycle {
     precondition {
-      condition     = can(regex("^arn:aws:iam::${local.account_id}:user/[A-Za-z0-9+=,.@_/-]+$", data.aws_caller_identity.current.arn))
+      condition     = local.applied_by_iam_user
       error_message = "Apply this root as the administrator's IAM user, not a role or another account: the policy allows only the applying identity."
     }
   }
@@ -152,7 +171,7 @@ resource "aws_s3_bucket_policy" "eu" {
 
   lifecycle {
     precondition {
-      condition     = can(regex("^arn:aws:iam::${local.account_id}:user/[A-Za-z0-9+=,.@_/-]+$", data.aws_caller_identity.current.arn))
+      condition     = local.applied_by_iam_user
       error_message = "Apply this root as the administrator's IAM user, not a role or another account: the policy allows only the applying identity."
     }
   }
