@@ -94,8 +94,14 @@ locals {
   ]
 
   // Only an IAM user of this account: a role session's caller ARN is the STS
-  // session, not the role ARN that S3 compares.
-  applied_by_iam_user = startswith(data.aws_caller_identity.current.arn, "arn:aws:iam::${local.account_id}:user/")
+  // session, not the role ARN that S3 compares. An IAM path may contain "${"
+  // or "&{", which the policy would evaluate as a variable and so stop
+  // matching the administrator; such an ARN is refused too.
+  applied_by_iam_user = (
+    startswith(data.aws_caller_identity.current.arn, "arn:aws:iam::${local.account_id}:user/")
+    && !strcontains(data.aws_caller_identity.current.arn, "$${")
+    && !strcontains(data.aws_caller_identity.current.arn, "&{")
+  )
 
   state_admins = [
     data.aws_caller_identity.current.arn,
